@@ -1,4 +1,6 @@
 """启动检查：要提前登录的、要提前放好密钥的，没准备好就提前告诉人。"""
+from pathlib import Path
+
 import pytest
 
 from superops.app import preflight, views
@@ -89,3 +91,15 @@ def test_cli_prints_cached_result_from_running_host(rt, monkeypatch, capsys):
         assert stop.value.code == 1 and "✗ GitLab" in out and "✓ 抖音创作者后台登录态" in out and "1 项没准备好" in out
     finally:
         server.shutdown()
+
+
+def test_专用浏览器命令行要装在本机_靠npx现拉会提醒(rt, monkeypatch):
+    """2026-11-13 T284：命令行没装在数据目录，退回 npx 现拉；Agent 沙箱写不了 ~/.npm 缓存，整轮监听补位失败。"""
+    from superops.biz import agent_browser
+    monkeypatch.setattr(preflight, "BROWSER_RULES", ("collect-comments",))          # 换一条测试世界里启用着的规则当“用到浏览器”
+    monkeypatch.setattr(agent_browser, "is_initialized", lambda s: True)
+    monkeypatch.setattr(agent_browser, "settings", lambda cfg: {"enabled": True, "profile": Path("/x"), "cli": ["npx", "-y", "@playwright/cli@0.1.24"]})
+    item = {i["id"]: i for i in rt.preflight(refresh=True, check=logins({}))["items"]}["tool:playwright-cli"]
+    assert item["ok"] is False and "superops browse install" in item["fix"] and "沙箱" in item["detail"]
+    monkeypatch.setattr(agent_browser, "settings", lambda cfg: {"enabled": True, "profile": Path("/x"), "cli": ["/data/tools/node_modules/.bin/playwright-cli"]})
+    assert {i["id"]: i for i in rt.preflight(refresh=True, check=logins({}))["items"]}["tool:playwright-cli"]["ok"] is True

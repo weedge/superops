@@ -1,8 +1,10 @@
 """面板的发布台：社媒账号（各平台创作者后台的登录态）和发布包的操作。
 
 - 账号：每个平台一个专用 Chrome 登录目录（~/popto-superops-data/browser-profiles/<平台>/），一个平台一个账号。
-  面板能做的：检查登录（无界面）、扫码登录 / 换号（在这台 Mac 上打开有界面的 Chrome，人扫码）、
-  打开草稿箱（有界面）、退出登录（登录目录挪到回收处，不直接删）。
+  抖音、小红书、视频号能自动发布；快手、B站、知乎、公众号只管账号（登录、校验、读身份、退出），发布走人工路径。
+  面板能做的（参照 Easel 的账号页）：扫码登录 / 换号（无界面打开登录页，二维码截图在面板里显示，手机扫；抖音要短信验证码时
+  面板里填）、校验账号（无界面，顺带读出昵称、头像、粉丝数）、在这台 Mac 上开窗口登录（备用）、打开草稿箱（有界面）、
+  退出登录（登录目录挪到回收处，不直接删）。
 - 发布包：批准发布（等于在群里批了发布卡片：发出带人工批准凭据的 content.publish.approved，按平台模式执行）、
   预演（只试运行，不点发布）、重试（自动发布失败转人工的，用原来的批准再发一次）、人工发完补登记。
 - 浏览器操作都很慢（登录最多 5 分钟、打开草稿箱最多 1 小时），放到独立子进程里跑，状态记在内存里给面板轮询；
@@ -23,8 +25,9 @@ from ..biz import paths
 
 ACTIONS = {
     # 动作: (标签, 作用对象, 有没有界面, 子进程参数)
-    "check": ("检查登录", "platform", False, ["publish", "check"]),
-    "login": ("扫码登录", "platform", True, ["publish", "login"]),
+    "check": ("校验账号", "platform", False, ["publish", "check"]),
+    "qrlogin": ("扫码登录", "platform", False, ["publish", "qrlogin"]),
+    "login": ("开窗口登录", "platform", True, ["publish", "login"]),
     "open": ("打开草稿箱", "platform", True, ["publish", "open"]),
     "try": ("预演（不发布）", "pack", False, ["publish", "try"]),
     "retry": ("重试发布", "pack", False, ["publish", "retry"]),
@@ -91,22 +94,63 @@ class PublishDesk:
         cfg = self._cfg()
         known = _read_accounts()
         out = []
-        for pf, meta in pubs.PLATFORMS.items():
-            prof = pubs.profile_dir(pf) if hasattr(pubs, "profile_dir") else paths.ops_data() / "browser-profiles" / pf
-            mode = str(((cfg.get("publishers") or {}).get(pf) or {}).get("mode") or "off")
+        for pf, meta in pubs.ACCOUNTS.items():
+            prof = paths.ops_data() / "browser-profiles" / pf
+            can = bool(meta.get("publish"))           # 只管账号的平台（快手、B站、知乎、公众号）还没有自动发布器
+            mode = str(((cfg.get("publishers") or {}).get(pf) or {}).get("mode") or "off") if can else "none"
             k = known.get(pf) or {}
             job = self._running(pf)
-            out.append({"platform": pf, "label": meta["label"], "mode": mode, "profile": prof.exists() and any(prof.iterdir()),
+            av = self._qr().avatar_file(pf)
+            out.append({"platform": pf, "label": meta["label"], "mode": mode, "publish": can, "app": meta.get("app"),
+                        "profile": prof.exists() and any(prof.iterdir()),
                         "status": k.get("status") or ("unknown" if prof.exists() else "none"), "checked_at": k.get("checked_at"),
                         "logged_in_at": k.get("logged_in_at"), "url": k.get("url"), "note": k.get("note"),
                         "nickname": (cfg.get("publish_accounts") or {}).get(pf) or k.get("nickname"),
+                        "name": k.get("name"), "account_id": k.get("account_id"), "followers": k.get("followers"),
+                        "avatar": av.stat().st_mtime_ns // 1_000_000 if av and k.get("status") == "ok" else None,
                         "drafts": (pubs.DRAFTS.get(pf) or {}).get("where"), "home": meta.get("home"),
-                        "upload": UPLOAD_URL.get(pf), "limits": LIMITS.get(pf, {}),
+                        "upload": UPLOAD_URL.get(pf) or meta.get("upload"), "limits": LIMITS.get(pf, {}),
                         "busy": job and {"id": job["id"], "action": job["action"], "label": job["label"], "started_at": job["started_at"]}})
         return out
 
+    @staticmethod
+    def _qr():
+        from ..biz.executors.publishers import qrlogin
+        return qrlogin
+
+    def login_status(self, platform: str) -> dict:
+        """扫码登录的实时状态（面板每秒拉一次）：状态、提示、二维码有没有更新、是否还在跑。"""
+        if platform not in _pubs().ACCOUNTS:
+            raise PublishError(400, f"不认识的平台 {platform}")
+        st = self._qr().read_status(platform)
+        job = self._running(platform)
+        running = bool(job and job["action"] == "qrlogin")
+        if not running and st.get("state") not in (*self._qr().TERMINAL, "none"):
+            st = {**st, "state": "error", "message": "登录进程已经结束：" + (st.get("message") or "没写原因")}
+        return {**st, "running": running}
+
+    def submit_code(self, platform: str, code: str) -> dict:
+        code = "".join(ch for ch in str(code or "") if ch.isdigit())
+        if not 4 <= len(code) <= 8:
+            raise PublishError(400, "验证码是 4–8 位数字")
+        if self.login_status(platform).get("state") not in ("sms_required", "verifying"):
+            raise PublishError(409, "现在不需要验证码")
+        self._qr().submit_code(platform, code)
+        return {"ok": True}
+
+    def cancel(self, platform: str) -> dict:
+        """关掉扫码弹窗：停掉登录进程，放开登录目录。"""
+        job = self._running(platform)
+        if not job or job["action"] != "qrlogin":
+            return {"ok": True, "stopped": False}
+        self._qr().write_status(platform, "cancelled", "已取消")
+        proc = job.get("_proc")
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
+        return {"ok": True, "stopped": True}
+
     def job_list(self) -> list[dict]:
-        return sorted(self.jobs.values(), key=lambda j: j["started_at"], reverse=True)[:JOB_KEEP]
+        return [{k: v for k, v in j.items() if not k.startswith("_")} for j in sorted(self.jobs.values(), key=lambda j: j["started_at"], reverse=True)[:JOB_KEEP]]
 
     # ── 子进程动作 ──
     def start(self, action: str, target: str, *, by: str = "panel") -> dict:
@@ -116,17 +160,17 @@ class PublishDesk:
         pubs = _pubs()
         platform = target
         if kind == "platform":
-            if target not in pubs.PLATFORMS:
+            if target not in pubs.ACCOUNTS:
                 raise PublishError(400, f"不认识的平台 {target}")
             if action == "open" and target not in pubs.DRAFTS:
-                raise PublishError(400, f"{pubs.PLATFORMS[target]['label']}没有可打开的草稿箱")
+                raise PublishError(400, f"{pubs.ACCOUNTS[target]['label']}没有可打开的草稿箱")
         else:
             pack = self.pack_row(target)
             platform = pack["platform"]
         with self._lock:
             busy = self._running(platform) or self._running(target)
             if busy:
-                raise PublishError(409, f"{pubs.PLATFORMS.get(platform, {}).get('label', platform)}正在{busy['label']}，等它结束再试")
+                raise PublishError(409, f"{pubs.ACCOUNTS.get(platform, {}).get('label', platform)}正在{busy['label']}，等它结束再试")
             job = {"id": uuid.uuid4().hex[:10], "action": action, "label": label, "target": target, "platform": platform,
                    "headed": headed, "by": by, "state": "running", "started_at": self._now(), "finished_at": None, "output": ""}
             # 平台级动作按平台占位；发布包动作也占住它的平台（同一个登录目录）
@@ -136,6 +180,10 @@ class PublishDesk:
                 if old["state"] != "running":
                     self.jobs.pop(old["id"], None)
         cmd = [*self._cli, *args, target]
+        if action == "qrlogin":
+            self._qr().write_status(platform, "starting", "正在打开登录页、准备二维码……")
+            if str((_read_accounts().get(platform) or {}).get("note") or "").startswith("上次扫码"):
+                _write_account(platform, note=None)          # 重新扫码：上一次失败的提示不再挂着
         if action == "retry":
             cmd.append("--headed")      # 平台要短信验证码时，人在弹出的窗口里完成
         threading.Thread(target=self._run, args=(job, cmd), daemon=True, name=f"publish-{action}-{target}").start()
@@ -145,22 +193,37 @@ class PublishDesk:
         log = paths.ops_data() / "logs" / "publish-desk"
         log.mkdir(parents=True, exist_ok=True)
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=2 * 3600, cwd=str(paths.ops_home()))
-            out = (proc.stdout or "") + (("\n" + proc.stderr) if proc.returncode and proc.stderr else "")
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=str(paths.ops_home()))
+            job["_proc"] = proc                       # 扫码弹窗关掉时 cancel() 用它停掉进程
+            try:
+                stdout, stderr = proc.communicate(timeout=2 * 3600)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                stdout, stderr = proc.communicate()
+                stderr = "超过 2 小时没结束，已停止\n" + (stderr or "")
+            out = (stdout or "") + (("\n" + stderr) if proc.returncode and stderr else "")
             ok = proc.returncode == 0
-        except subprocess.TimeoutExpired:
-            out, ok = "超过 2 小时没结束，已停止", False
         except OSError as e:
             out, ok = f"启动失败：{e}", False
+        job.pop("_proc", None)
         out = out.strip()
+        acct = _account_line(out)
         if out.startswith("✗"):        # 命令行把“没成功”打成 ✗ 开头但退出码是 0（如 publish try）
             ok = False
         (log / f"{job['started_at'][:19].replace(':', '')}-{job['action']}-{job['target']}.log").write_text(out, encoding="utf-8")
+        who = {"name": acct.get("name") or None, "account_id": acct.get("id"), "followers": acct.get("followers")} if acct.get("name") else {}
         if job["action"] == "check":
-            ok = "✓" in out.splitlines()[0] if out else False
-            _write_account(job["platform"], status="ok" if ok else "expired", checked_at=self._now(),
-                           url=(out.split()[-1] if out and out.split()[-1].startswith("http") else None),
-                           note=None if ok else "登录失效或没登录，扫码重新登录")
+            first = out.splitlines()[0] if out else ""
+            ok = "✓" in first
+            url = next((w for w in reversed(first.split()) if w.startswith("http")), None)
+            _write_account(job["platform"], status="ok" if ok else "expired", checked_at=self._now(), url=url,
+                           note=None if ok else "登录失效或没登录，扫码重新登录", **who)
+        elif job["action"] == "qrlogin":
+            ok = bool(acct.get("logged_in")) if acct else ok and "✓" in out
+            if ok:
+                _write_account(job["platform"], status="ok", checked_at=self._now(), logged_in_at=self._now(), note=None, **who)
+            elif self._qr().read_status(job["platform"]).get("state") != "cancelled":
+                _write_account(job["platform"], note="上次扫码没登录成功：" + (self._qr().read_status(job["platform"]).get("message") or ""))
         elif job["action"] == "login":
             ok = ok and "登录成功" in out
             _write_account(job["platform"], status="ok" if ok else "expired", checked_at=self._now(),
@@ -170,7 +233,7 @@ class PublishDesk:
     def logout(self, platform: str) -> dict:
         """退出登录：把登录目录挪到 browser-profiles/.removed/<平台>-<时间>/（不直接删，误点还能挪回来）。"""
         pubs = _pubs()
-        if platform not in pubs.PLATFORMS:
+        if platform not in pubs.ACCOUNTS:
             raise PublishError(400, f"不认识的平台 {platform}")
         if self._running(platform):
             raise PublishError(409, "这个平台正在执行别的操作，等它结束再退出")
@@ -184,7 +247,9 @@ class PublishDesk:
                 shutil.move(str(prof), str(dest))
         except pubs.ProfileBusy as e:
             raise PublishError(409, str(e)) from e
-        _write_account(platform, status="none", checked_at=self._now(), note="已退出登录", logged_in_at=None)
+        _write_account(platform, status="none", checked_at=self._now(), note="已退出登录", logged_in_at=None, name=None, account_id=None, followers=None)
+        for f in self._qr().state_dir().glob(f"{platform}*"):      # 头像、二维码、扫码状态
+            f.unlink(missing_ok=True)
         return {"ok": True, "moved": str(dest)}
 
     # ── 发布包 ──
@@ -226,6 +291,16 @@ class PublishDesk:
                 "cover": pm.get("cover") or media.get("cover"), "video": media.get("video"), "files": files, "shots": shots,
                 "duration_sec": (meta.get("media_info") or {}).get("duration_sec"), "orientation": (meta.get("media_info") or {}).get("orientation")}
 
+    def image_path(self, platform: str, kind: str) -> Path:
+        """扫码登录的二维码（只在等扫码时给）和账号头像。"""
+        if platform not in _pubs().ACCOUNTS:
+            raise PublishError(400, f"不认识的平台 {platform}")
+        q = self._qr()
+        f = q.qr_file(platform) if kind == "qr" else q.avatar_file(platform) if kind == "avatar" else None
+        if not f or not f.is_file() or (kind == "qr" and q.read_status(platform).get("state") != "qr_ready"):
+            raise PublishError(404, "没有这张图")
+        return f
+
     def media_path(self, pack_id: str, name: str, shot: bool = False) -> Path:
         """只给发布包目录（或它的截图目录）里的媒体文件，不接受子路径。"""
         if not name or "/" in name or "\\" in name or name.startswith("."):
@@ -241,6 +316,18 @@ class PublishDesk:
         if f.suffix.lower() not in MEDIA_TYPES | {".png"} or not f.is_file() or f.resolve().parent != base.resolve():
             raise PublishError(404, "没有这个文件")
         return f
+
+
+def _account_line(out: str) -> dict:
+    """命令行 check / qrlogin 最后一行的 {"account": {...}}：登没登录、昵称、账号 ID、粉丝数。"""
+    for line in reversed((out or "").splitlines()):
+        line = line.strip()
+        if line.startswith('{"account"'):
+            try:
+                return json.loads(line).get("account") or {}
+            except ValueError:
+                return {}
+    return {}
 
 
 def content_type(path: Path) -> str:

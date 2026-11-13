@@ -9,6 +9,7 @@
     login   Agent 专用浏览器登录态（监听、GEO）          superops browse login
     key     钥匙串密钥（TikHub、GitLab）                security add-generic-password -s popto-ops/<名> -a popto-ops -w
     tool    本机命令（Agent CLI、dws、ffmpeg）           安装或登录对应的命令行
+    tool    Agent 专用浏览器的命令行装在本机（不靠 npx）    superops browse install
 
 只检查“有规则用得到”的：对应规则都停用了，或平台的发布模式是 off、没配 CI 项目，就不查也不提醒。
 """
@@ -62,6 +63,11 @@ def static_checks(cfg: dict, settings: dict) -> list[dict]:
         items.append({"id": "login:agent-browser", "kind": "login", "title": "Agent 专用浏览器登录态", "ok": ok, "rules": used,
                       "detail": str(browser["profile"]) if ok else "还没登录过任何站点",
                       "fix": "superops browse install && superops browse login"})
+        # 命令行退回成 npx 现拉时，Agent 的沙箱里写不了 ~/.npm 缓存，会话开不起来（2026-11-13 T284：npm EPERM，监听补位整轮失败）
+        local = Path(browser["cli"][0]).name != "npx"
+        items.append({"id": "tool:playwright-cli", "kind": "tool", "title": "Agent 专用浏览器的命令行装在本机", "ok": local, "rules": used,
+                      "detail": browser["cli"][0] if local else "没装在本机，要靠 npx 现拉：Agent 的沙箱里写不了 npm 缓存，会开不起浏览器",
+                      "fix": "superops browse install --proxy <npm 代理>"})
     roles = {r["run"].get("agent") for r in settings["policy"]["rules"] if r["enabled"] and r["run"].get("executor") == "agent"}
     for name, agent in (cfg.get("agents") or {}).items():
         binary = agent.get("bin")

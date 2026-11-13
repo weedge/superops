@@ -31,6 +31,25 @@ PLATFORMS = {
                     "login": "https://creator.xiaohongshu.com/login", "logged_in": ["/new/", "/creator/"]},
 }
 
+# 只管账号（扫码登录、校验、读昵称头像、退出）、还没有自动发布器的平台：发布时走人工路径（官方发布页 upload）。
+# 登录、是谁的判断都在 qrlogin.py（参照 Easel：快手走 passport 扫码、知乎 /api/v4/me、B站 nav 接口、公众号后台网址里的 token）
+ACCOUNT_ONLY = {
+    # 快手创作者中心首页的“立即登录”是个链接（先跳 /rest/infra/logout 再转 passport），这里直接开 passport 的登录页，不经过退出
+    "kuaishou": {"label": "快手", "home": "https://cp.kuaishou.com/article/manage/video",
+                 "login": "https://passport.kuaishou.com/pc/account/login/?sid=kuaishou.web.cp.api&callback="
+                          "https%3A%2F%2Fcp.kuaishou.com%2Frest%2Finfra%2Fsts%3FfollowUrl%3Dhttps%253A%252F%252Fcp.kuaishou.com%252Fprofile%26setRootDomain%3Dtrue",
+                 "upload": "https://cp.kuaishou.com/article/publish/video", "app": "快手 App"},
+    "bilibili": {"label": "B站", "home": "https://member.bilibili.com/platform/home", "login": "https://passport.bilibili.com/login",
+                 "upload": "https://member.bilibili.com/platform/upload/video/frame", "app": "哔哩哔哩 App"},
+    "zhihu": {"label": "知乎", "home": "https://www.zhihu.com/", "login": "https://www.zhihu.com/signin",
+              "upload": "https://zhuanlan.zhihu.com/write", "app": "知乎 App"},
+    "wechat_oa": {"label": "公众号", "home": "https://mp.weixin.qq.com/", "login": "https://mp.weixin.qq.com/",
+                  "upload": "https://mp.weixin.qq.com/", "app": "公众号管理员的微信"},
+}
+# 账号页的全部平台：能自动发布的（PLATFORMS）+ 只管账号的
+ACCOUNTS = {**{k: {**v, "publish": True, "app": {"wechat_channels": "微信"}.get(k, f"{v['label']} App")} for k, v in PLATFORMS.items()},
+            **{k: {**v, "publish": False} for k, v in ACCOUNT_ONLY.items()}}
+
 
 # 各平台“定时发布”要求的最少提前量（实测：抖音提示“支持 2 小时后及 14 天内”，小红书、视频号默认给的是 1 小时后）
 MIN_LEAD = {"douyin": timedelta(hours=2), "xiaohongshu": timedelta(hours=1), "wechat_channels": timedelta(hours=1)}
@@ -232,7 +251,7 @@ def profile_lock(platform: str, wait_s: float = 600):
                 break
             except BlockingIOError:
                 if time.time() >= deadline:
-                    label = PLATFORMS.get(platform, {}).get("label", platform)
+                    label = ACCOUNTS.get(platform, {}).get("label", platform)
                     raise ProfileBusy(f"{label}的浏览器正被别的任务占用（发布 / 数据采集 / 登录），等了 {int(wait_s)} 秒")
                 time.sleep(1)
         try:
@@ -359,13 +378,14 @@ def is_logged_in(platform: str, url: str, cookies: list[dict] | None = None) -> 
 
 def login(platform: str, timeout_s: int = 300) -> bool:
     """打开有界面的 Chrome 让人扫码；登录成功（跳到后台首页）后保存登录态并关闭。"""
-    cfg = PLATFORMS[platform]
+    from .qrlogin import logged_in
+    cfg = ACCOUNTS[platform]
     with browser(platform, headless=False) as ctx:
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto(cfg["login"], wait_until="domcontentloaded")
         deadline = time.time() + timeout_s
         while time.time() < deadline:
-            if is_logged_in(platform, page.url, ctx.cookies()):
+            if logged_in(platform, ctx):
                 page.wait_for_timeout(3000)  # 让 Cookie 落盘
                 return True
             page.wait_for_timeout(1500)

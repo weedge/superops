@@ -213,11 +213,20 @@ superops published pk_c_20261113_01_douyin https://www.douyin.com/video/…
 
 **发之前想先看看会填成什么样**：发布卡上“预演”，或 `superops publish try <发布包ID>`（只试运行，不发）。
 
-**账号**：面板“业务 → 内容 → 账号”每个平台一张卡——扫码登录 / 换号、校验账号、打开草稿箱、退出登录（登录目录挪到回收处，不直接删）。扫码会在运行 superops 的这台 Mac 上弹出专用 Chrome。终端：
+**账号**：面板“业务 → 内容 → 账号”每个平台一张卡，显示头像、昵称、账号 ID、粉丝数和登录状态。分两组：抖音、小红书、视频号能自动发布；快手、B站、知乎、公众号先只管账号（登录、校验、看身份），发内容走人工路径（卡上有官方发布页链接）。
+
+- **扫码登录 / 换号**：点“扫码登录”，弹窗里十几秒后出二维码，用手机 App（视频号用微信）扫，手机上确认就登上了。二维码过期会自动换新的；抖音要短信验证时，弹窗里出输入框，填手机收到的验证码。登录成功后昵称、头像自动读出来。关掉弹窗就停止。
+- **校验账号**：确认还登着，顺带刷新昵称、头像、粉丝数。
+- **二维码出不来**（网络、平台风控）：用卡片下面的“在 Mac 上开窗口登录”，在运行 superops 的这台 Mac 上弹出专用 Chrome 扫。
+- **退出登录**：登录目录挪到回收处，不直接删。
+
+终端：
 
 ```bash
-superops publish login douyin          # wechat_channels、xiaohongshu 同理
-superops publish check                 # 三个平台的登录状态
+superops publish qrlogin douyin        # 无界面扫码：二维码存在 ~/popto-superops-data/publish-login/douyin.png
+superops publish login douyin          # 在这台 Mac 上开窗口扫码（wechat_channels、xiaohongshu 同理）
+superops publish qrlogin zhihu         # 其他社媒账号同理：kuaishou / bilibili / zhihu / wechat_oa
+superops publish check                 # 全部平台的登录状态和账号昵称
 ```
 
 每天 16:30 系统会自己检查一次，登录失效会在群里提醒，免得 17:00 批了才发现。

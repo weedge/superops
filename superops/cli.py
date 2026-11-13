@@ -492,19 +492,37 @@ def cmd_publish(a) -> None:
         if res.url:
             print("  链接", res.url)
         return
-    targets = list(pubs.PLATFORMS) if a.platform == "all" else [a.platform]
+    targets = list(pubs.ACCOUNTS) if a.platform == "all" else [a.platform]
+    if any(pf not in pubs.ACCOUNTS for pf in targets):
+        sys.exit(f"不认识的平台 {a.platform}（{' / '.join(pubs.ACCOUNTS)}）")
     for pf in targets:
-        label = pubs.PLATFORMS[pf]["label"]
+        label = pubs.ACCOUNTS[pf]["label"]
         if a.action == "open":
+            if pf not in pubs.DRAFTS:
+                print(f"{label}：没有可打开的草稿箱")
+                continue
             print(f"{label}：已打开专用 Chrome，停在草稿位置（{pubs.DRAFTS[pf]['where']}）。检查完点发布，关掉窗口即结束。")
             pubs.open_drafts(pf)
         elif a.action == "login":
             print(f"{label}：已打开 Chrome，请扫码登录（5 分钟内）……")
             ok = pubs.login(pf)
             print(f"{label}：{'登录成功，登录态已保存' if ok else '超时未登录'}")
+        elif a.action == "qrlogin":
+            from .biz.executors.publishers import qrlogin
+            print(f"{label}：二维码会存到 {qrlogin.qr_file(pf)}（面板“内容 → 账号”里直接显示），用手机扫码……", flush=True)
+            r = qrlogin.run(pf)
+            st = qrlogin.read_status(pf)
+            print(f"{'✓' if r.get('logged_in') else '✗'} {label} {st.get('message') or ('登录成功' if r.get('logged_in') else '没登录成功')}")
+            print(json.dumps({"account": {k: r.get(k) for k in ("logged_in", "name", "id", "followers")}}, ensure_ascii=False))
+            if not r.get("logged_in"):
+                sys.exit(1)
         else:
-            ok, url = pubs.check_login(pf)
-            print(f"{'✓' if ok else '✗'} {label:<4} {'已登录' if ok else '未登录（superops publish login ' + pf + '）'}  {url}")
+            from .biz.executors.publishers import qrlogin
+            r = qrlogin.whoami(pf)
+            ok = r["logged_in"]
+            who = f"  {r['name']}" if r.get("name") else ""
+            print(f"{'✓' if ok else '✗'} {label:<4} {'已登录' if ok else '未登录（superops publish qrlogin ' + pf + '）'}{who}  {r['url']}")
+            print(json.dumps({"account": {k: r.get(k) for k in ("logged_in", "name", "id", "followers")}}, ensure_ascii=False))
 
 
 def cmd_browse(a) -> None:
@@ -705,9 +723,10 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("args", nargs="*", help="collect / removed：作品 ID（posts.id），collect 不带就是最近 30 天全部；import：CSV 文件")
     s.set_defaults(fn=lambda a: post("/api/metrics/collect", {"post_ids": a.args, "origin": "cli"}) if a.action == "collect" else cmd_metrics(a))
     s = sp.add_parser("publish")
-    s.add_argument("action", choices=["login", "check", "try", "retry", "open"])
+    s.add_argument("action", choices=["login", "qrlogin", "check", "try", "retry", "open"])
     s.add_argument("platform", nargs="?", default="all",
-                   help="平台（douyin / wechat_channels / xiaohongshu / all）；try / retry 时是发布包 ID。"
+                   help="平台（douyin / wechat_channels / xiaohongshu，只管账号的 kuaishou / bilibili / zhihu / wechat_oa，或 all）；try / retry 时是发布包 ID。"
+                        "qrlogin：无界面打开登录页，二维码截图到 ~/popto-superops-data/publish-login/<平台>.png（面板账号页显示），手机扫码；"
                         "retry：已批准但自动发布失败转了人工的，用原来的批准再发一次（批准须在 24 小时内）")
     s.add_argument("--live", action="store_true", help="try：真发布（默认只试运行）")
     s.add_argument("--draft", action="store_true", help="try：填好后存进平台草稿箱，不发布")

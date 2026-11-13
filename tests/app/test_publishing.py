@@ -35,7 +35,8 @@ def test_发布包详情给面板预览_按平台取文案和素材(world):
     assert k["cover"] == "cover.jpg" and {f["name"] for f in k["files"]} == {"cover.jpg", "v.mp4"}     # 只列媒体文件
     over = http.handle_get(world, "/api/publish", {})
     assert [x["id"] for x in over["packs"]] == [pid] and {a["platform"] for a in over["accounts"]} >= {"douyin", "xiaohongshu", "wechat_channels"}
-    assert all(a["limits"] and a["upload"].startswith("https://") for a in over["accounts"])
+    assert all(a["upload"].startswith("https://") for a in over["accounts"])
+    assert all(a["limits"] for a in over["accounts"] if a["publish"])          # 只管账号的平台没有发布器，也就没有字数限制
 
 
 def test_媒体下载口只给发布包目录里的媒体文件(world):

@@ -389,6 +389,7 @@ launchctl kickstart -k gui/$(id -u)/cn.popto.superops   # 重启
 | Agent 熔断，类型是认证 | 命令行的登录过期 | 在终端里重新登录那个 CLI，再 `superops agents reset <名>` |
 | 开发工单失败：“开发环境没准备好” | `ci.repos` 没有这个项目的本机路径；不知道在哪个仓库（事件没带项目，`ci.projects` 不止一个）；worktree 里有未提交的改动 | 补配置或清理 worktree，`superops retry` |
 | 浏览器工单失败：“专用浏览器没开起来” | playwright-cli 没装，或登录态目录没初始化 | `superops browse check`，按提示 `install` / `login` |
+| 浏览器工单报“专用会话不可用”，工单目录里有 `npm error code EPERM … ~/.npm/_cacache` | playwright-cli 没装在数据目录的 `tools/`，退回 `npx` 现拉；`~/.npm` 的 npx 缓存一被清掉，Agent 的沙箱写不了 npm 缓存，就开不起浏览器（2026-11-13 T284） | `superops browse install --proxy <npm 代理>` 装到本机（`superops browse check` 显示的是 `tools/` 下的路径就对了），再 `superops retry T284`；启动检查会提醒“Agent 专用浏览器的命令行装在本机” |
 | 系统问题：“研判没有完成” | 主 Session 的 Agent 不可用或超时；它的决定被宿主拒绝 | `superops reevaluate <trigger_id>`；确认不需要处理就 `superops dismiss <decision_id>` |
 | 改了 `policy.yaml` 没生效 | 没 `reload`；改的是 `eval.mode` 而库里已有开关；改的是 `agents.yaml`（要重启） | 对应处理 |
 | 启动报“数据库是更新的版本” | 程序版本比写这个库的版本旧 | 换回新程序，或用升级前的备份 |

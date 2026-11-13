@@ -835,6 +835,23 @@ a.dm-link:hover { text-decoration: none; filter: brightness(1.15); }
   .gfun .dflow-s { flex: 1 1 40%; }
   .gfun .dflow-a { display: none; }
 }
+/* 账号卡片：头像、昵称；扫码登录弹窗 */
+.acard-ava { width: 48px; height: 48px; flex: none; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 19px; color: #fff; background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--pc) 75%, #fff), color-mix(in srgb, var(--pc) 70%, #000)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 45%, transparent), 0 0 16px color-mix(in srgb, var(--pc) 30%, transparent); }
+.acard-ava.img { background-size: cover; background-position: center; }
+.acard-who { min-width: 0; }
+.acard-sub b { color: var(--text); font: 600 12px var(--mono); }
+.acard-more { display: flex; flex-wrap: wrap; gap: 4px; width: 100%; padding-top: 6px; border-top: 1px dashed var(--line2); }
+.btn.danger.ghost { color: var(--bad); }
+#qrdlg { width: min(380px, calc(100vw - 32px)); }
+.qr-dlg { text-align: center; }
+.qr-st { font-size: 13px; margin-bottom: 14px; }
+.qr-img { width: 240px; height: 240px; margin: 0 auto; border-radius: 12px; background: #fff center / contain no-repeat; box-shadow: 0 0 0 6px #fff; }
+.qr-tip { margin-top: 12px; font-size: 12px; color: var(--faint); }
+.qr-wait { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 160px; color: var(--muted); font-size: 13px; }
+.qr-done { font-size: 54px; line-height: 160px; color: var(--ok); }
+.qr-bad { min-height: 100px; display: grid; place-items: center; padding: 10px; font-size: 13px; color: var(--bad); line-height: 1.6; }
+.qr-sms { display: grid; gap: 10px; padding: 10px 6px; }
+.qr-sms .inp { height: 46px; text-align: center; font: 600 22px var(--mono); letter-spacing: 6px; }
 </style>
 </head>
 <body>
@@ -852,6 +869,7 @@ a.dm-link:hover { text-decoration: none; filter: brightness(1.15); }
 <main class="wrap" id="view"><div class="empty">加载中…</div></main>
 <div id="toasts" aria-live="polite"></div>
 <dialog id="dlg"></dialog>
+<dialog id="qrdlg"></dialog>
 
 <script>
 'use strict';
@@ -931,7 +949,7 @@ const ADMISSION_COLS = [['listedUnaddressed', '名单内 · 没 @'], ['unlistedA
 const ADMISSION_VALUE = { explicit: '当明确请求', inferred: '当候选研判', ignore: '忽略' };
 const WEEKDAYS = { MON: '周一', TUE: '周二', WED: '周三', THU: '周四', FRI: '周五', SAT: '周六', SUN: '周日' };
 const BIZ_LABELS = {
-  douyin: '抖音', xiaohongshu: '小红书', channels: '视频号', wechat_channels: '视频号', kuaishou: '快手', bilibili: 'B站', zhihu: '知乎',
+  douyin: '抖音', xiaohongshu: '小红书', channels: '视频号', wechat_channels: '视频号', kuaishou: '快手', bilibili: 'B站', zhihu: '知乎', wechat_oa: '公众号',
   proposed: '已提议', shelved: '已搁置', expired: '已过期', draft: '存草稿', dry_run: '试运行', live: '自动发布',
   planned: '已排期', scripted: '已写稿', review: '复核中', approved: '已批准', published: '已发布', ready: '待批', carded: '已出卡片', rejected: '已拒绝', failed: '失败',
   awaiting_manual: '等人手动发布', done: '已完成', pending: '未到点', overdue: '逾期', skipped: '已跳过',
@@ -1857,7 +1875,7 @@ function publishView(packs, acctOf, jobs, days) {
   const toApprove = pending.filter((k) => ['ready', 'carded', 'failed'].includes(k.status));
   const manual = pending.filter((k) => k.action_status === 'awaiting_manual' || k.status === 'drafted');
   const kpi = (v, label, color, hot) => `<div class="kpi${hot ? ' hot' : ''}" style="--kc:${color}"><b>${v}</b><small>${label}</small></div>`;
-  const accts = Object.values(acctOf);
+  const accts = Object.values(acctOf).filter((a) => a.publish !== false);
   const kpis = `<div class="kpis">${[
     kpi(toApprove.length, '待批准', 'var(--c-orange)', toApprove.length > 0),
     kpi(pending.filter((k) => k.status === 'approved' && k.action_status !== 'awaiting_manual').length, '已批准执行中', 'var(--c-purple)'),
@@ -1867,7 +1885,7 @@ function publishView(packs, acctOf, jobs, days) {
     kpi(jobs.filter((j) => j.state === 'running').length, '浏览器操作进行中', 'var(--c-blue)'),
   ].join('')}</div>`;
   /* 账号条：模式 + 登录状态，模式要用浏览器但没登录的标红 */
-  const strip = `<div class="acct-strip">${accts.map((a) => {
+  const strip = `<div class="acct-strip">${accts.filter((a) => a.publish !== false).map((a) => {
     const [st, tone] = ACCT_STATE[a.status] || [a.status, ''], [ml, , mc] = PUB_MODE[a.mode] || [a.mode, '', 'var(--faint)'];
     const risky = a.mode !== 'off' && a.status !== 'ok';
     return `<a class="acct-pill${risky ? ' risky' : ''}" href="${H('business', { tab: 'content', days, cv: 'accounts' })}" title="${esc((PUB_MODE[a.mode] || [])[1] || '')}${risky ? '；账号没确认登录，自动操作会失败转人工' : ''}">
@@ -1941,25 +1959,105 @@ function accountsView(accts, jobs) {
   const card = (a) => {
     const [st, tone] = ACCT_STATE[a.status] || [a.status, ''], [ml, mdesc, mc] = PUB_MODE[a.mode] || [a.mode, '', 'var(--faint)'];
     const pc = PLATFORM_COLOR[a.platform] || 'var(--c-cyan)', ok = a.status === 'ok', busy = a.busy;
-    const name = a.nickname || '';
+    const name = a.name || a.nickname || '';
+    const ava = a.avatar ? `<span class="acard-ava img" style="--pc:${pc};background-image:url('/api/publish/image?platform=${encodeURIComponent(a.platform)}&kind=avatar&v=${a.avatar}')"></span>`
+      : `<span class="acard-ava" style="--pc:${pc}">${esc(Array.from(name || a.label)[0])}</span>`;
+    const sub = [a.account_id ? `ID ${esc(a.account_id)}` : '', a.followers != null ? `粉丝 <b>${fans(a.followers)}</b>` : ''].filter(Boolean).join(' · ');
     return `<article class="acard${ok ? ' ok' : ''}" style="--pc:${pc}">
       <div class="acard-h"><span class="plat-tag" style="--pc:${pc}">${esc(a.label)}</span><span class="abadge ${tone}">${busy ? '<span class="spin"></span>' + esc(busy.label) + '中' : (ok ? '✓ ' : '') + esc(st)}</span></div>
-      <div class="acard-id"><span class="lead-ava" style="--pc:${pc}">${esc(Array.from(name || a.label)[0])}</span><div><div class="acard-n">${esc(name || '没记账号名')}<button class="btn ghost small" data-act="acct-rename" data-platform="${esc(a.platform)}" data-name="${esc(name)}">改</button></div>
-        <div class="acard-sub">${a.checked_at ? `上次校验 ${T(a.checked_at)}` : '还没校验过'}${a.logged_in_at ? ` · 扫码登录于 ${T(a.logged_in_at)}` : ''}</div></div></div>
-      <div class="acard-mode"><span class="mchip" style="--mc:${mc}">${esc(ml)}</span><span>${esc(mdesc)}</span></div>
+      <div class="acard-id">${ava}<div class="acard-who"><div class="acard-n">${esc(name || (ok ? '已登录（还没读到昵称）' : '还没登录'))}</div>
+        <div class="acard-sub">${sub ? sub + '<br>' : ''}${a.checked_at ? `上次校验 ${T(a.checked_at)}` : '还没校验过'}${a.logged_in_at ? ` · 登录于 ${T(a.logged_in_at)}` : ''}</div>
+        ${a.nickname && a.name && a.nickname !== a.name ? `<div class="acard-sub">备注：${esc(a.nickname)}</div>` : ''}</div></div>
+      ${a.publish === false ? `<div class="acard-mode"><span class="mchip" style="--mc:var(--faint)">只管账号</span><span>还没接自动发布：发布时走人工路径${a.upload ? `（<a href="${esc(a.upload)}" target="_blank" rel="noopener">官方发布页 ↗</a>）` : ''}</span></div>`
+        : `<div class="acard-mode"><span class="mchip" style="--mc:${mc}">${esc(ml)}</span><span>${esc(mdesc)}</span></div>`}
       ${a.note ? `<div class="pnote${ok ? '' : ' warn'}">${esc(a.note)}</div>` : ''}
-      ${busy && busy.action === 'login' ? '<div class="pnote hot">已在这台 Mac 上打开 Chrome：用手机 App 扫码登录（5 分钟内）。登录成功后窗口自己关掉</div>' : ''}
+      ${busy && busy.action === 'login' ? '<div class="pnote hot">已在这台 Mac 上打开 Chrome：用手机 App 扫码登录（5 分钟内），成功后窗口自己关掉</div>' : ''}
       ${busy && busy.action === 'open' ? '<div class="pnote">已在这台 Mac 上打开 Chrome 草稿箱：检查完点发布，关掉窗口就结束</div>' : ''}
       <div class="actions">
-        <button class="btn${ok ? '' : ' primary'}" data-act="acct" data-op="login" data-platform="${esc(a.platform)}"${busy ? ' disabled' : ''}>${ok ? '重新扫码 / 换号' : '扫码登录'}</button>
-        <button class="btn" data-act="acct" data-op="check" data-platform="${esc(a.platform)}"${busy || !a.profile ? ' disabled' : ''}>校验账号</button>
+        <button class="btn${ok ? '' : ' primary'}" data-act="acct-qr" data-platform="${esc(a.platform)}" data-label="${esc(a.label)}"${busy && busy.action !== 'qrlogin' ? ' disabled' : ''}>${busy && busy.action === 'qrlogin' ? '查看二维码' : ok ? '扫码换号' : '扫码登录'}</button>
+        <button class="btn" data-act="acct" data-op="check" data-platform="${esc(a.platform)}"${busy || !a.profile ? ' disabled' : ''} title="无界面打开后台，确认还登着，顺带读昵称、头像、粉丝数">校验账号</button>
         ${a.drafts ? `<button class="btn" data-act="acct" data-op="open" data-platform="${esc(a.platform)}"${busy || !a.profile ? ' disabled' : ''} title="${esc(a.drafts)}">打开草稿箱</button>` : ''}
-        ${a.profile ? `<button class="btn danger" data-act="acct-logout" data-platform="${esc(a.platform)}" data-label="${esc(a.label)}"${busy ? ' disabled' : ''}>退出登录…</button>` : ''}
+        <span class="acard-more">
+          <button class="btn ghost small" data-act="acct" data-op="login" data-platform="${esc(a.platform)}"${busy ? ' disabled' : ''} title="二维码出不来时的备用：在这台 Mac 上打开有界面的 Chrome 扫码">在 Mac 上开窗口登录</button>
+          <button class="btn ghost small" data-act="acct-rename" data-platform="${esc(a.platform)}" data-name="${esc(a.nickname || '')}">备注</button>
+          ${a.profile ? `<button class="btn ghost small danger" data-act="acct-logout" data-platform="${esc(a.platform)}" data-label="${esc(a.label)}"${busy ? ' disabled' : ''}>退出登录…</button>` : ''}
+        </span>
       </div></article>`;
   };
-  return `<section class="sec"><h2>社媒账号 <span class="cnt">${accts.length}</span><span class="hint">每个平台一个专用 Chrome 登录目录、一个账号；自动发布、存草稿、数据采集都用它。扫码和打开草稿箱会在这台 Mac 上弹出 Chrome 窗口</span></h2>
-    <div class="acards">${accts.map(card).join('')}</div>
+  const pubs = accts.filter((a) => a.publish !== false), only = accts.filter((a) => a.publish === false);
+  return `<section class="sec"><h2>能自动发布的账号 <span class="cnt">${pubs.filter((a) => a.status === 'ok').length}/${pubs.length}</span><span class="hint">每个平台一个专用 Chrome 登录目录、一个账号；自动发布、存草稿、数据采集都用它。扫码在网页里完成，二维码会自动刷新；平台要短信验证码时弹窗里直接填</span></h2>
+    <div class="acards">${pubs.map(card).join('')}</div></section>
+    ${only.length ? `<section class="sec"><h2>其他社媒账号 <span class="cnt">${only.filter((a) => a.status === 'ok').length}/${only.length}</span><span class="hint">先把账号登上、管起来：扫码登录、校验、看昵称头像粉丝；还没接自动发布，发内容走人工路径（复制文案、下载素材、打开官方发布页）</span></h2>
+    <div class="acards">${only.map(card).join('')}</div></section>` : ''}
+    <section class="sec">
     <div class="quiet" style="margin-top:12px">发布模式（每个平台一种）：${Object.entries(PUB_MODE).map(([k, [l, d]]) => `<b>${l}</b>（<span class="mono">${k}</span>）${d}`).join('；')}。在 <span class="mono">~/popto-superops-data/local.yaml</span> 的 <span class="mono">publishers.&lt;平台&gt;.mode</span> 里改，改完重启宿主。测试内容始终只试运行。</div></section>`;
+}
+/* 扫码登录弹窗（参照 Easel 的账号页）：每秒拉一次状态，二维码换了图跟着换；要短信验证码时出输入框；关掉就停掉登录进程 */
+const QR_STATE = { none: '准备中', starting: '准备中', qr_ready: '请扫码', scanned: '已扫码', sms_required: '要短信验证码', verifying: '验证中',
+  success: '登录成功', expired: '二维码过期', error: '没登录成功', cancelled: '已取消' };
+const QR_DONE = ['success', 'expired', 'error', 'cancelled'];
+async function qrOpen(pf, label) {
+  qrClose(false);
+  const box = $('#qrdlg');
+  S.qr = { pf, label, st: { state: 'starting', message: '正在打开登录页、准备二维码……' }, seq: (S.qr && S.qr.seq || 0) + 1, fails: 0 };
+  qrPaint();
+  box.showModal();
+  box.onclose = () => qrClose(true);
+  try {
+    const acct = ((S.data.pub || {}).accounts || []).find((a) => a.platform === pf) || {};
+    if (!(acct.busy && acct.busy.action === 'qrlogin')) await post('/api/publish/accounts', { action: 'qrlogin', platform: pf });
+  } catch (e) { S.qr.st = { state: 'error', message: e.message || '没能开始扫码登录' }; qrPaint(); return; }
+  const seq = S.qr.seq;
+  S.qr.timer = setInterval(async () => {
+    if (!S.qr || S.qr.seq !== seq || S.qr.busy) return;
+    S.qr.busy = true;
+    try {
+      const st = await api(`/api/publish/login?platform=${encodeURIComponent(pf)}`);
+      if (!S.qr || S.qr.seq !== seq) return;
+      S.qr.fails = 0;
+      const changed = st.state !== S.qr.st.state || st.message !== S.qr.st.message || st.qr_ts !== S.qr.st.qr_ts;
+      S.qr.st = st;
+      if (changed) qrPaint();
+      if (QR_DONE.includes(st.state) && !st.running) {
+        clearInterval(S.qr.timer); S.qr.timer = null;
+        if (st.state === 'success') { toast(`${label}登录成功${st.name ? '：' + st.name : ''}`); load(); }
+      }
+    } catch (e) {
+      if (S.qr && ++S.qr.fails >= 5) { S.qr.st = { state: 'error', message: '连不上宿主，请检查后重试' }; qrPaint(); clearInterval(S.qr.timer); }
+    } finally { if (S.qr) S.qr.busy = false; }
+  }, 1000);
+}
+function qrPaint() {
+  const q = S.qr, box = $('#qrdlg');
+  if (!q || !box) return;
+  const st = q.st || {}, s = st.state || 'starting';
+  const spin = (t) => `<div class="qr-wait"><span class="spin"></span>${esc(t)}</div>`;
+  let mid;
+  if (s === 'qr_ready') mid = `<div class="qr-img" style="background-image:url('/api/publish/image?platform=${encodeURIComponent(q.pf)}&kind=qr&v=${st.qr_ts || Date.now()}')"></div><div class="qr-tip">二维码几分钟就过期，这里会自动换新的</div>`;
+  else if (s === 'sms_required') mid = `<div class="qr-sms"><input class="inp" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="短信验证码"><button class="btn primary" data-act="qr-code">提交验证码</button></div>`;
+  else if (s === 'scanned') mid = spin(st.message || '扫码成功，请在手机上确认登录');
+  else if (s === 'verifying') mid = spin('正在验证验证码……');
+  else if (s === 'success') mid = `<div class="qr-done">✓</div><div class="qr-tip">${esc(st.name ? '已登录：' + st.name : '已登录')}，登录态存进了这个平台的专用目录</div>`;
+  else if (['expired', 'error'].includes(s)) mid = `<div class="qr-bad">${esc(st.message || '没登录成功')}</div><div class="qr-tip">也可以用账号卡上的“在 Mac 上开窗口登录”</div>`;
+  else mid = spin(st.message || '正在打开登录页、准备二维码（十几秒）……');
+  const tone = s === 'success' ? 'var(--ok)' : ['expired', 'error'].includes(s) ? 'var(--bad)' : s === 'sms_required' ? 'var(--warn)' : 'var(--muted)';
+  box.innerHTML = `<div class="dlg qr-dlg"><h3>扫码登录${esc(q.label)}</h3>
+    <div class="qr-st" style="color:${tone}">${esc(QR_STATE[s] || s)}${st.message && !['scanned', 'verifying', 'starting', 'none'].includes(s) && s !== 'error' && s !== 'expired' ? ' · ' + esc(st.message) : ''}</div>
+    ${mid}
+    <div class="dlg-actions">${['expired', 'error'].includes(s) ? `<button class="btn primary" data-act="acct-qr" data-platform="${esc(q.pf)}" data-label="${esc(q.label)}">重新获取二维码</button>` : ''}
+      <button class="btn" data-act="qr-close">${s === 'success' ? '完成' : '关闭'}</button></div></div>`;
+  const inp = box.querySelector('.qr-sms .inp');
+  if (inp) inp.focus();
+}
+function qrClose(fromDialog) {
+  const q = S.qr;
+  if (!q) return;
+  if (q.timer) clearInterval(q.timer);
+  S.qr = null;
+  const box = $('#qrdlg');
+  if (!fromDialog && box && box.open) { box.onclose = null; box.close(); }
+  if (!QR_DONE.includes((q.st || {}).state)) post('/api/publish/accounts', { action: 'cancel', platform: q.pf }).catch(() => {});
+  load();
 }
 function calendarView(c) {
   /* 按自然周排的日历：一行一周，一格一天；格子里是那天的选题（支柱颜色、状态、发布包的平台） */
@@ -2111,7 +2209,7 @@ function dataPage(d, r, days) {
 }
 
 /* 获客：线索（社媒监听找到的潜在用户）和监听用的意图词 */
-const PLATFORM_COLOR = { douyin: '#25f4ee', xiaohongshu: '#ff2e4d', channels: '#fa9d3b', wechat_channels: '#fa9d3b', kuaishou: '#ff6a1a', bilibili: '#fb7299', zhihu: '#3d8bff' };
+const PLATFORM_COLOR = { douyin: '#25f4ee', xiaohongshu: '#ff2e4d', channels: '#fa9d3b', wechat_channels: '#fa9d3b', kuaishou: '#ff6a1a', bilibili: '#fb7299', zhihu: '#3d8bff', wechat_oa: '#07c160' };
 const COMMENT_STATE = { sent: ['评论已发出', 'ok'], unconfirmed: ['发了但没确认到', 'warn'], manual: ['要人去发', 'hot'] };
 const STAGE_COLOR = { 待跟进: 'var(--c-orange)', 已评论: 'var(--c-cyan)', 已联系: 'var(--c-blue)', 已回复: 'var(--c-green)', 粉丝不足: 'var(--c-yellow)', 不跟进: 'var(--faint)' };
 const TERM_COLOR = { pain: 'var(--c-orange)', solution: 'var(--c-cyan)', competitor: 'var(--c-pink)', brand: 'var(--c-green)', persona: 'var(--c-purple)' };
@@ -2725,11 +2823,19 @@ const ACTIONS = {
   async acct(b) {
     const op = b.dataset.op, pf = b.dataset.platform;
     if (op === 'login') {
-      const ok = await ask({ title: '在这台 Mac 上扫码登录？', ok: '打开 Chrome',
+      const ok = await ask({ title: '在这台 Mac 上开窗口登录？', ok: '打开 Chrome',
         body: '<p>会在运行 superops 的这台 Mac 上打开专用 Chrome，停在创作者后台登录页。用手机 App 扫码（5 分钟内），登录成功后窗口自己关掉，登录态存进这个平台的专用目录。</p><p>换号也是这样：扫另一个号就替换了。</p>' });
       if (!ok) return;
     }
-    act(b, () => post('/api/publish/accounts', { action: op, platform: pf }), { login: '已打开 Chrome，请扫码', check: '正在校验（约 20 秒）', open: '已打开 Chrome 草稿箱' }[op] || '已开始');
+    act(b, () => post('/api/publish/accounts', { action: op, platform: pf }), { login: '已在这台 Mac 上打开 Chrome，请扫码', check: '正在校验并读取账号信息（约 20 秒）', open: '已打开 Chrome 草稿箱' }[op] || '已开始');
+  },
+  'acct-qr': (b) => qrOpen(b.dataset.platform, b.dataset.label),
+  'qr-close': () => qrClose(false),
+  async 'qr-code'(b) {
+    const inp = $('#qrdlg .qr-sms .inp'), code = ((inp && inp.value) || '').replace(/\D/g, '');
+    if (code.length < 4) { toast('请输入手机收到的验证码', 'bad'); return; }
+    try { await post('/api/publish/accounts', { action: 'code', platform: S.qr.pf, code }); S.qr.st = { ...S.qr.st, state: 'verifying' }; qrPaint(); }
+    catch (e) { toast(e.message || '提交没成功', 'bad'); }
   },
   async 'acct-logout'(b) {
     const ok = await ask({ title: `退出${b.dataset.label}的登录？`, ok: '退出登录', danger: true,
@@ -2737,7 +2843,7 @@ const ACTIONS = {
     if (ok) act(b, () => post('/api/publish/accounts', { action: 'logout', platform: b.dataset.platform }), '已退出登录');
   },
   async 'acct-rename'(b) {
-    const ok = await ask({ title: '记一下这个平台登的是哪个号', ok: '保存', body: '<p>只是给人看的备注，方便确认登录的是正式账号。</p>', input: { label: '账号名', placeholder: '例如：@你的账号名' } });
+    const ok = await ask({ title: '给这个号记个备注', ok: '保存', body: '<p>只是给人看的备注（例如“正式号”“测试号”）。昵称、头像、粉丝数在扫码登录和校验账号时自动读出来。</p>', input: { label: '账号名', placeholder: '例如：@你的账号名' } });
     if (ok) act(b, () => post('/api/publish/accounts', { action: 'rename', platform: b.dataset.platform, name: ok.value }), '已保存');
   },
   reload: (b) => act(b, () => post('/api/reload', { origin: 'panel' }), (r) => (r && r.changed ? `策略已重新加载，版本变了${(r.tickets_notified || []).length ? `，告知了 ${r.tickets_notified.length} 张工单` : ''}` : '已重新加载，策略没有变化')),
@@ -2757,9 +2863,10 @@ document.addEventListener('input', (e) => {
   if (e.target.dataset.form === 'text' && S.ui.form) { S.ui.form.text = e.target.value; S.ui.form.error = null; }
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) && !e.target.isContentEditable && !$('#dlg').open) {
+  if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) && !e.target.isContentEditable && !$('#dlg').open && !$('#qrdlg').open) {
     e.preventDefault(); $('#search').focus(); return;
   }
+  if (e.key === 'Enter' && !e.isComposing && e.target.closest && e.target.closest('.qr-sms')) { e.preventDefault(); ACTIONS['qr-code'](); return; }
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || e.target.tagName === 'INPUT') && e.target.dataset.form === 'text' && !e.isComposing) {
     const b = e.target.closest('.form').querySelector('[data-act="form-submit"]');
     if (b) { e.preventDefault(); submitForm(b); }
