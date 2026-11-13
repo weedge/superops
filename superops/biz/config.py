@@ -18,7 +18,7 @@ TOOLS = {"readonly", "workspace", "browser", "dev"}
 EFFORT = {"low", "medium", "high", "xhigh", "max"}
 CONTEXT_PROVIDERS = {
     "hub_digest", "hub_digest_week", "ops_metrics", "unread_feedback", "demands", "event_payload",
-    "event_media", "listening_terms", "budget_popto_credits", "mr_diff", "event_scripts", "popto_help", "content_calendar",
+    "event_media", "listening_terms", "budget_popto_credits", "mr_diff", "event_scripts", "popto_help", "content_calendar", "social_accounts",
 }
 
 

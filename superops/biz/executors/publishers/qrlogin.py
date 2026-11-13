@@ -511,7 +511,8 @@ def identity(pf: str, ctx, page, seen: dict | None = None) -> dict:
                 page.goto(ACCOUNTS[pf]["home"], wait_until="domcontentloaded", timeout=60000)
             for _ in range(12):           # 单页应用，昵称晚一点才出来
                 got = _page_identity(page, ".user-info-name, .user-line .name, .username, .user-name" if pf == "kuaishou"
-                                     else ".weui-desktop-account__nickname, .account_nickname",
+                                     # 公众号后台 2026-11 实测：昵称在 span.acount_box-nickname（页面原样拼作 acount）
+                                     else ".acount_box-nickname, .account_box-nickname, .weui-desktop-account__nickname, .account_nickname",
                                      ".user-info-avatar img[src], .user-line img[src^='http']" if pf == "kuaishou"
                                      else ".weui-desktop-account__thumb img, img.weui-desktop-account__thumb, .weui-desktop-account__avatar img")
                 if got["name"]:

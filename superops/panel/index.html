@@ -1310,7 +1310,9 @@ function journeyStages(tr, tk) {
   if (!tk) return out;
   out.push({ title: isNew ? '开工单' : '工单收到', at: isNew ? tk.created_at : null, main: `${tk.code} · ${tk.title || ''}`, body: tk.scope || '', href: Hticket(tk.code),
     data: '授权 {范围, 强度, 依据, 策略版本}', table: 'ticket', state: 'done' });
-  const last = asg[asg.length - 1], working = last && !last.ended_at;
+  /* 这一轮还在跑：派工没结束、也还没有报告。受阻 / 等人回答的派工会一直开着等人，但这一轮已经跑完了 */
+  const last = asg[asg.length - 1], working = last && !last.ended_at && !last.report;
+  const waitsPerson = tk.stage === 'person';
   const runLine = runs.map((r) => `${r.agent}${r.model ? ' · ' + r.model : ''}${r.effort ? ' · ' + r.effort : ''}${r.is_fallback ? '（降级）' : ''} ${r.duration_s != null ? r.duration_s + 's' : '…'}${r.cost_usd ? ' · $' + Number(r.cost_usd).toFixed(2) : ''}${r.status && r.status !== 'ok' ? ' · ' + (RUN_STATUS[r.status] || r.status) : ''}`).join('；');
   out.push({ title: '执行器 → Agent', at: last && last.started_at, main: runs.length ? runLine : tk.executor === 'script' ? '脚本' : last ? '排队等执行位 / Agent' : '还没派工',
     body: tk.executor === 'script' ? '确定性脚本：不用大模型，按步骤办事' : '提示词 = 工单卡片 + Skill + 相关决定 + 上下文文件；同一张工单续接同一段会话',
@@ -1323,8 +1325,10 @@ function journeyStages(tr, tk) {
     body: msgs.length ? '唯一找人的出口：静默时段、每天卡片上限、回到原会话' : rep ? '按规则的 tell：定时 / 业务事件起的工单只在要人拍板时出声' : '', data: '消息 {确认 / 结果 / 问题卡片}', table: 'outbox',
     state: msgs.some((m) => m.status === 'pending') ? 'live' : msgs.length ? 'done' : rep ? 'end' : 'wait' });
   const back = sent[sent.length - 1], q = tk.question;
-  out.push({ title: q ? '等你回答' : '回到你', at: back && back.at, main: back ? `${sourceTitle((back.channel || {}).source || tr.source)} · ${MSG_KIND[back.kind] || back.kind}` : q ? `${tk.code} 在等你拍板` : '—',
-    body: back ? back.text : q ? q : '', data: q ? `回「${tk.code} 1」→ 带批准凭据的事件 → 下一站` : '', state: back ? 'done' : q ? 'live' : 'wait', you: true });
+  out.push({ title: q ? '等你回答' : waitsPerson ? '等你处理' : '回到你', at: back && back.at,
+    main: back ? `${sourceTitle((back.channel || {}).source || tr.source)} · ${MSG_KIND[back.kind] || back.kind}` : q ? `${tk.code} 在等你拍板` : '—',
+    body: back ? back.text : q ? q : '', data: q ? `回「${tk.code} 1」→ 带批准凭据的事件 → 下一站` : waitsPerson ? `回「${tk.code} ……」补一句，它接着做；或在执行页重试` : '',
+    state: q || (waitsPerson && !back) ? 'live' : back ? 'done' : 'wait', you: true });
   return out;
 }
 function journeyHtml(asks, pick, tk) {
@@ -1353,8 +1357,9 @@ function journeyHtml(asks, pick, tk) {
   const runs = tk ? (tk.runs || []).filter((r) => parseTime(r.started_at) >= new Date(t0 - 60000)) : [];
   const total = backMsg ? since(t0, backMsg.at).replace('+', '') : '';
   const agentS = runs.reduce((a, r) => a + (Number(r.duration_s) || 0), 0), cost = runs.reduce((a, r) => a + (Number(r.cost_usd) || 0), 0);
-  const live = st.some((s) => s.state === 'live');
-  const sum = [total && `发出到收到回复 <b>${total}</b>`, agentS && `Agent 跑了 <b>${+agentS.toFixed(1)}s</b>`, cost && `<b>$${cost.toFixed(2)}</b>`, live && '<span class="jlive">● 正在进行</span>'].filter(Boolean).join(' · ');
+  const live = st.some((s) => s.state === 'live'), person = tk && tk.stage === 'person';
+  const sum = [total && `发出到收到回复 <b>${total}</b>`, agentS && `Agent 跑了 <b>${+agentS.toFixed(1)}s</b>`, cost && `<b>$${cost.toFixed(2)}</b>`,
+    person ? `<span class="jlive">● 等你处理（${esc(tk.label || '')}）</span>` : live && '<span class="jlive">● 正在进行</span>'].filter(Boolean).join(' · ');
   return `<section class="sec journey"><h2>一条指令的旅程<span class="hint">你说的一句话从进来到回到你手里经过的每一站：这一站产出什么数据、落在状态库哪张表、离发出过了多久。默认跟着最新一条走</span>
       ${S.ui.journey ? '<button class="btn small" style="margin-left:auto" data-act="journey-pick" data-id="">跟最新 ↻</button>' : ''}</h2>
     <div class="jasks">${chips}</div>

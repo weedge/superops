@@ -11,7 +11,8 @@ eval:
 executor:
   max_workers: 4         # 同时运行的轮数；人的消息可以多占一个位子
   idle_ttl: 7d           # 工单闲置（等后续事件）这么久没等到，就安静结束
-  default: {role: write, tools: workspace, timeout: 30m}   # 明确请求的工单（没有规则）用的执行方式
+  default: {role: write, tools: workspace, timeout: 30m, context: [social_accounts]}   # 明确请求的工单（没有规则）用的执行方式；
+                                                                                    # 默认带上社媒账号清单，人问“绑了哪些号”时能直接答
 
 # 没有会话可回的工单（定时、流水线起的）在哪里找人。正式运行在 local.yaml 改成：
 #   home: {source: dingtalk, thread: home, address: {chat: "<运营群 openConversationId>"}}

@@ -267,3 +267,24 @@ def test_digest_and_budget_providers_read_from_host(home, data_dir, host):
     ctx.build(["hub_digest", "demands"], {"task": {"id": "T3"}, "events": []})
     ctx.close()
     assert any("hub_digest 生成失败" in p for p, _ in ctx.files) and any(p == "context/demands.json" for p, _ in ctx.files)
+
+
+def test_social_accounts_provider_lists_every_platform_without_login_state(home, data_dir):
+    """明确请求的工单默认带上社媒账号清单（2026-11-13 T292：问“绑了哪些号”，工单里没有任何账号信息，只能报受阻）。"""
+    base = data_dir / "browser-profiles"
+    (base / "douyin" / "Default").mkdir(parents=True)
+    (base / "douyin" / "Default" / "Cookies").write_text("secret-cookie")
+    (base / "accounts.json").write_text(json.dumps({"douyin": {"status": "ok", "name": "某律师", "followers": 36, "checked_at": "2026-11-13T05:44:00Z"},
+                                                    "zhihu": {"status": "expired", "note": "登录失效"}}, ensure_ascii=False), encoding="utf-8")
+    run_dir = data_dir / "work" / "t1"
+    ctx = ContextBuilder(None, run_dir)
+    ctx.build(["social_accounts"], {"task": {"id": "t1"}, "events": []})
+    out = (run_dir / "context" / "social_accounts.json").read_text(encoding="utf-8")
+    data = json.loads(out)
+    rows = {r["platform"]: r for r in data["accounts"]}
+    assert set(rows) == {"douyin", "xiaohongshu", "wechat_channels", "kuaishou", "bilibili", "zhihu", "wechat_oa"}
+    assert rows["douyin"]["status_text"] == "已登录" and rows["douyin"]["name"] == "某律师" and rows["douyin"]["can_auto_publish"] is True
+    assert rows["zhihu"]["status"] == "expired" and rows["zhihu"]["can_auto_publish"] is False and rows["zhihu"]["publish_mode"] is None
+    assert rows["bilibili"]["status"] == "none"
+    assert "不是 Popto 产品里用户绑定的账号" in data["note"] and "secret-cookie" not in out
+    ctx.close()
