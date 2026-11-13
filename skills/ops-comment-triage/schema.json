@@ -1,0 +1,90 @@
+{
+  "description": "评论分拣",
+  "required": [
+    "comments"
+  ],
+  "properties": {
+    "comments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "category"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "category": {
+            "enum": [
+              "demand",
+              "question",
+              "praise",
+              "negative",
+              "spam",
+              "lead"
+            ]
+          },
+          "sentiment": {
+            "enum": [
+              "pos",
+              "neu",
+              "neg"
+            ]
+          },
+          "intensity": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3
+          },
+          "reply_draft": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "signals": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/signal"
+      }
+    }
+  },
+  "$defs": {
+    "signal": {
+      "type": "object",
+      "required": [
+        "quote",
+        "kind",
+        "module",
+        "intensity"
+      ],
+      "properties": {
+        "quote": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        },
+        "persona": {
+          "type": "string"
+        },
+        "intensity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "source_ref": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

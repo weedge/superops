@@ -1,0 +1,39 @@
+{
+  "description": "发布包",
+  "required": [
+    "packs"
+  ],
+  "properties": {
+    "packs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "content_id",
+          "pack_dir",
+          "platforms"
+        ],
+        "properties": {
+          "content_id": {
+            "type": "string"
+          },
+          "pack_dir": {
+            "type": "string"
+          },
+          "platforms": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "title": {
+            "type": "string"
+          },
+          "channel_code": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

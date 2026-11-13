@@ -1,0 +1,30 @@
+{
+  "required": [
+    "report_markdown"
+  ],
+  "properties": {
+    "report_markdown": {
+      "type": "string"
+    },
+    "profiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "competitor"
+        ],
+        "properties": {
+          "competitor": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

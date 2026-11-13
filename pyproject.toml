@@ -1,0 +1,27 @@
+[project]
+name = "superops"
+version = "0.1.0"
+description = "Popto 产品运营研发多 Agent 系统：来源 → 触发 → 评估 → 工单 → 执行器，只在需要人拍板时打扰人"
+requires-python = ">=3.11"
+dependencies = [
+  "pyyaml>=6",
+  "jsonschema>=4",
+  "playwright>=1.48",
+]
+
+[project.scripts]
+superops = "superops.cli:main"
+ops-browser = "superops.biz.agent_browser:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["superops"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

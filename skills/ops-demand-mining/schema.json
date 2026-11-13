@@ -1,0 +1,89 @@
+{
+  "description": "需求归并与打分",
+  "required": [
+    "assignments"
+  ],
+  "properties": {
+    "assignments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "quote",
+          "kind",
+          "module",
+          "intensity"
+        ],
+        "properties": {
+          "signal_ref": {
+            "type": "string"
+          },
+          "quote": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "module": {
+            "type": "string"
+          },
+          "persona": {
+            "type": "string"
+          },
+          "intensity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3
+          },
+          "demand_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "new_demand": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "module": {
+                "type": "string"
+              },
+              "size": {
+                "enum": [
+                  "S",
+                  "M",
+                  "L"
+                ]
+              },
+              "value": {
+                "enum": [
+                  "付费",
+                  "首条完成",
+                  "其他"
+                ],
+                "description": "影响付费 / 影响首条完成 / 其他，决定价值系数"
+              }
+            }
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "rejected_by_not_doing": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  }
+}

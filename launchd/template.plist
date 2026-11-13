@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 由 superops launchd install 生成。launchd 不加载 zsh alias，所以全部用绝对路径，并显式设置 PATH。 -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>{{LABEL}}</string>
+  <key>ProgramArguments</key>
+  <array>
+{{ARGS}}
+  </array>
+  <key>WorkingDirectory</key><string>{{OPS_HOME}}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>{{PATH}}</string>
+    <key>SUPEROPS_DATA</key><string>{{OPS_DATA}}</string>
+    <key>SUPEROPS_HOME</key><string>{{OPS_HOME}}</string>
+    <key>PYTHONUNBUFFERED</key><string>1</string>
+  </dict>
+  <key>KeepAlive</key><true/>
+  <key>RunAtLoad</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>{{OPS_DATA}}/logs/{{NAME}}.out.log</string>
+  <key>StandardErrorPath</key><string>{{OPS_DATA}}/logs/{{NAME}}.err.log</string>
+</dict>
+</plist>

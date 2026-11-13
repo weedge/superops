@@ -1,0 +1,19 @@
+# 定时来源（Asia/Shanghai）。每一轮 pass 检查一次，机器睡眠期间错过的会在醒来后补发最近一次。
+# 每一项到点产生一条触发（线程 schedule:<type>），由 policy.yaml 里 when.origin=cron 的规则接。
+# at: "HH:MM" 每天；"MON 09:00" 每周；every: "30m" / "1h" 按间隔（从 0 点对齐）。
+# name：面板上显示的中文名。max_late：错过超过这么久就不补（默认 12h）。requires：该配置项（agents.yaml / local.yaml 的点路径）为空时不触发。
+- { type: cron.collect_metrics, name: 作品指标采集,    every: "30m" }
+- { type: cron.funnel_export, name: 注册漏斗导出,      at: "06:40" }
+- { type: cron.daily_brief, name: 每日运营日报,        at: "08:30" }
+- { type: cron.social_listening, name: 社媒监听（接口）,   at: "14:00" }   # 接口监听（抖音 / 小红书 / 视频号 / 快手）
+- { type: cron.social_listening_browser, name: 社媒监听（浏览器补位）, at: "14:10" }   # 浏览器补位（知乎 / B站 / 搜狗微信）
+- { type: cron.publish_login_check, name: 发布账号登录检查, at: "16:30", max_late: "30m", requires: publishers }
+- { type: cron.publish_batch_card, name: 今晚待发布卡片, at: "17:00", max_late: "3h" }
+- { type: cron.comment_collect, name: 自家作品评论采集,    every: "1h" }
+- { type: cron.weekly_review, name: 周报与需求 Top 10,      at: "MON 09:00" }
+- { type: cron.geo_check, name: GEO 检查,          at: "WED 10:00" }
+- { type: cron.competitor_review, name: 竞品评论需求评审,  at: "THU 10:00" }   # 竞品评论里的需求：采集 → 评审卡片
+- { type: cron.topic_planning, name: 下周内容选题,     at: "FRI 15:00" }
+- { type: cron.weekly_cleanup, name: 周日大扫除,     at: "SUN 10:00" }
+- { type: cron.data_retention, name: 数据保留清理,     at: "04:30" }   # 数据保留期清理 + 补打码（机器睡着就醒来后补跑）
+- { type: cron.ci_poll, name: 发现 Agent MR,            every: "30m", requires: ci.projects }  # 兜底：开发工单推送后宿主会直接触发审查；人手推的修改最多晚 30 分钟被发现

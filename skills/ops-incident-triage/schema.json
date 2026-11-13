@@ -1,0 +1,47 @@
+{
+  "description": "线上报错排查",
+  "required": [
+    "root_cause"
+  ],
+  "properties": {
+    "root_cause": {
+      "type": "string"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "fix": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "none",
+            "config",
+            "code"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        },
+        "mr_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "user_impact": {
+      "type": "string"
+    },
+    "signals": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  }
+}

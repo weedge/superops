@@ -1,0 +1,43 @@
+{
+  "description": "PRD 与开发 / 修复 MR",
+  "required": [
+    "size"
+  ],
+  "properties": {
+    "prd_path": {
+      "type": "string"
+    },
+    "size": {
+      "enum": [
+        "S",
+        "M",
+        "L"
+      ]
+    },
+    "mr_url": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "branch": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "mr_title": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 120
+    },
+    "mr_description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

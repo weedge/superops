@@ -1,0 +1,76 @@
+{
+  "description": "选题与内容日历",
+  "required": [
+    "calendar"
+  ],
+  "properties": {
+    "shelved": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^c_[0-9]{8}_[0-9]{2,3}$"
+      }
+    },
+    "calendar": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "content_id",
+          "title",
+          "pillar",
+          "platforms"
+        ],
+        "properties": {
+          "content_id": {
+            "type": "string",
+            "pattern": "^c_[0-9]{8}_[0-9]{2,3}$"
+          },
+          "title": {
+            "type": "string"
+          },
+          "pillar": {
+            "enum": [
+              "A",
+              "B",
+              "C",
+              "D",
+              "E",
+              "F"
+            ]
+          },
+          "persona": {
+            "type": "string"
+          },
+          "platforms": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "ref_hot": {
+            "type": "string"
+          },
+          "popto_features": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "planned_date": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "description": "周报、需求 Top 10 与单条复盘",
+  "properties": {
+    "report_path": {
+      "type": "string"
+    },
+    "top_demands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "title",
+          "score"
+        ],
+        "properties": {
+          "demand_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "score": {
+            "type": "number"
+          },
+          "signals": {
+            "type": "integer"
+          },
+          "size": {
+            "enum": [
+              "S",
+              "M",
+              "L"
+            ]
+          },
+          "quote": {
+            "type": "string"
+          },
+          "suggest": {
+            "enum": [
+              "do",
+              "watch",
+              "reject"
+            ]
+          }
+        }
+      }
+    },
+    "post_review": {
+      "type": "object",
+      "properties": {
+        "post_id": {
+          "type": "string"
+        },
+        "verdict": {
+          "enum": [
+            "hit",
+            "flop",
+            "normal"
+          ]
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "suggestions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

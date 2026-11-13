@@ -1,0 +1,49 @@
+{
+  "description": "视频质检",
+  "required": [
+    "issues"
+  ],
+  "properties": {
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "type",
+          "detail",
+          "severity"
+        ],
+        "properties": {
+          "time": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "blocker",
+              "major",
+              "minor"
+            ]
+          }
+        }
+      }
+    },
+    "ai_label_present": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "hook_first_3s": {
+      "type": "string"
+    },
+    "degraded": {
+      "type": "boolean"
+    }
+  }
+}

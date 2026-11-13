@@ -1,0 +1,44 @@
+{
+  "description": "脚本合规复核",
+  "required": [
+    "passed",
+    "issues"
+  ],
+  "properties": {
+    "passed": {
+      "type": "boolean"
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "location",
+          "rule",
+          "severity"
+        ],
+        "properties": {
+          "location": {
+            "type": "string"
+          },
+          "rule": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "suggestion": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "blocker",
+              "major",
+              "minor"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

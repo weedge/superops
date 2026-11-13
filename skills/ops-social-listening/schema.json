@@ -1,0 +1,89 @@
+{
+  "description": "社媒舆情监听与线索",
+  "properties": {
+    "report_markdown": {
+      "type": "string"
+    },
+    "leads": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "platform",
+          "profile_url",
+          "why"
+        ],
+        "properties": {
+          "platform": {
+            "type": "string"
+          },
+          "profile_url": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": "string"
+          },
+          "industry": {
+            "type": "string"
+          },
+          "lead_type": {
+            "enum": [
+              "creator",
+              "team_lead",
+              "mcn",
+              "other"
+            ]
+          },
+          "followers": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "score": {
+            "type": "number"
+          },
+          "why": {
+            "type": "string"
+          },
+          "suggestion": {
+            "type": "string"
+          },
+          "target_url": {
+            "type": "string",
+            "description": "要评论的那条作品的链接（抖音是 https://www.douyin.com/video/<作品ID>）"
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "人批了就以品牌号原样发出的评论原文：短、具体、像真人，不带链接、不引导私信、不提收益数字"
+          }
+        }
+      }
+    },
+    "signals": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "term_stats": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "term",
+          "hits"
+        ],
+        "properties": {
+          "term": {
+            "type": "string"
+          },
+          "hits": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  }
+}

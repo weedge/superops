@@ -1,0 +1,174 @@
+# 本机 Agent 的启动方式、能力、并发、降级链，以及熔断、预算、静默时段、通知出口等机器层面的设置。
+# “谁可以让 Agent 开工、Agent 可以主动做什么”不在这里，在 policy.yaml。
+# 机器相关、含内网地址或账号 ID 的配置写在 ~/popto-superops-data/local.yaml（不进 git），按同名键深度覆盖本文件。
+
+# 管理 API 和面板的监听地址；确定性脚本也通过它回调宿主（脚本契约沿用 ops 的 /v1/*，所以键名仍叫 hub）。
+# 端口和旧的 ops 中台（8787）错开，两套可以同时跑。
+hub:
+  host: 127.0.0.1
+  port: 8797
+  token: null                 # 监听内网地址时在 local.yaml 设一个令牌；本机请求不需要
+
+overflow_after: 10m           # 主力 Agent 只是忙（并发满）时先排队，等满这么久才交给降级链上的下一个；每多等这么久最多再往后一位。0 = 不等
+
+# 自动化专用环境：权限参数由宿主按规则的 tools 档位传入。
+proxy: null                   # 在 local.yaml 填 "http://<内网代理>:3218"
+no_proxy: "localhost,127.0.0.1,192.168.0.0/16,10.0.0.0/8"
+path: "~/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+
+external_skill_dirs:          # Popto 现有产品 Skills，被规则直接引用，不复制
+  - "../skills"
+popto_help_dir: "../docs/popto-help"   # Popto 帮助文档：写脚本 / 复核 / 排选题时复制进 context/popto-help/ 核对产品事实
+
+# Agent 通过本机包装脚本启动（与终端里 claude / codex / agy 别名一致），代理由包装脚本自己设置。
+# 包装脚本会加全权限参数；宿主追加的档位参数实测能否收紧：
+#   claude：--disallowedTools 在 bypassPermissions 下仍生效 ✓
+#   codex ：exec -s read-only 覆盖包装脚本的 danger-full-access ✓
+#   claude：workspace / dev 档位 allowedTools 失效（bypass 下非白名单 Bash 也能跑），只剩禁用清单 △
+#   agy   ：--dangerously-skip-permissions 压过 --sandbox ✗
+# strict_tiers 里的档位绕开包装脚本、直调 strict_bin，代理取包装脚本里的 PROXY=（或 agents.<名>.proxy）。
+agents:                       # title / duty：面板运转图上的称号和职责（改了重启服务生效）
+  claude:
+    title: 主笔
+    duty: 研判拍方向（选题、周报、竞品评审），写日报、脚本和发布包，分拣评论、线索和需求，写 PRD 开 MR、周日大扫除
+    type: claude
+    bin: "~/claude.sh"
+    strict_bin: "~/.local/bin/claude"
+    strict_tiers: []          # 想让 workspace / dev 也严格按白名单：[workspace, browser, dev]
+    concurrency: 3
+    default_model: null       # null = 用 CLI 默认模型；规则里可用 run.model 覆盖
+    resume: true              # 同一张工单的各轮接着同一个会话（--resume）；接不上时提示词里的“到目前为止”兜底
+    capabilities: [decide, write, classify, dev, review, ops, image, video_degraded]
+    structured_output: true   # 用 --json-schema 取 structured_output
+  codex:
+    title: 审查员
+    duty: 复核脚本合规、审查 MR（不审自己写的），排查线上故障，抽帧看视频做质检和爆款拆解，开专用浏览器做社媒监听和 GEO 检查
+    type: codex
+    bin: "~/codex.sh"
+    strict_bin: "/opt/homebrew/bin/codex"   # 续接轮直调本体（包装脚本的 -s danger-full-access 会压过档位，见 adapters.CodexAdapter）
+    resume: true              # 同一张工单的各轮接着同一个会话（codex exec resume）；续不上就新开一个，“到目前为止”兜底
+    concurrency: 2
+    capabilities: [review, ops, dev, write, classify, decide, image, browser, video, video_degraded]
+    structured_output: false  # --output-schema 要求严格 Schema，改用提示词 + 宿主校验
+  antigravity:                # 2026-11-12 起不可用：已从所有降级链和规则里摘掉，见下面 fallback_chains
+    title: 视觉
+    duty: 原来负责看视频、看图和开浏览器；不可用期间这些活都交给 Codex
+    type: antigravity
+    bin: "~/agy.sh"
+    strict_bin: "~/.local/bin/agy"
+    strict_tiers: [readonly]  # 处理评论等不可信输入时必须真只读
+    concurrency: 2
+    capabilities: [video, image, browser, write, classify]
+  workbuddy:
+    title: 替补
+    duty: 降级链的最后一位：Claude 和 Codex 都不可用时，从收件箱接写作、分拣和看图的活，做完放回发件箱
+    type: inbox               # 无可用命令行，走收件箱 / 发件箱
+    inbox: "~/popto-superops-data/workbuddy-inbox"
+    outbox: "~/popto-superops-data/workbuddy-outbox"
+    max_wait: 6h
+    concurrency: 1
+    capabilities: [write, classify, video_degraded, image]
+  script:
+    title: 执行员
+    duty: 不调用大模型，按固定步骤办事：采集作品指标、评论、漏斗和竞品，往各平台发布，跟 MR 的 CI 和合并，定期清理数据
+    type: script              # 确定性脚本（采集器 / 执行器），不调用大模型
+    concurrency: 4
+    capabilities: [script]
+
+# Agent 专用浏览器（policy.yaml 里 run.tools=browser 的规则：社媒监听、GEO 检查）。
+# Agent 自己没有浏览器工具，由宿主提供 `ops-browser`（playwright-cli + 本机 Chrome + 下面的登录态目录）。
+# 登录由人完成：superops browse login；登录态只存在这个目录，和发布用的各平台目录分开。
+# 同一个目录同一时间只能开一个 Chrome，所以浏览器档位的轮次由宿主串行执行。
+agent_browser:
+  enabled: true
+  profile: "~/popto-superops-data/browser-profiles/agent-browse"
+  headed: false               # 无界面运行。2026-11-12 起抖音 / 小红书 / 视频号 / 快手的监听改走接口，浏览器只搜知乎、B站、搜狗微信和
+                              # GEO 检查的各家 AI 助手，这些无头都能用；无头模式下抖音搜索会跳滑块验证码（实测），要让浏览器搜抖音时改回 true
+  cli: null                   # null = 数据目录 tools/ 下的 playwright-cli（superops browse install），其次 PATH，最后 npx
+  idle_timeout: 10m           # 浏览器档位的轮次（Codex；Antigravity 恢复后同样适用）这么久没有任何动作就提前结束、交给下一个 Agent；0 关掉
+
+fallback_chains:
+  decide:   [claude, codex]
+  write:    [claude, codex, workbuddy]
+  classify: [claude, codex, workbuddy]
+  dev:      [claude, codex]
+  review:   [codex, claude]   # 生产者与审查者不能相同，由宿主强制
+  ops:      [codex, claude]
+  # 2026-11-12 起 Antigravity（agy）不可用，原来排它的地方都换成 Codex；agents.antigravity 的定义留着，恢复时加回链里即可
+  video:    [codex, claude, workbuddy]   # 非 antigravity 时先抽帧 + 转写（Codex / Claude 看的是抽帧宫格和转写）
+  image:    [codex, claude, workbuddy]
+  browser:  [codex, claude]              # Claude 浏览器档也能用 ops-browser / WebSearch，作为 Codex 不可用时的兜底
+  script:   [script]
+
+circuit_breaker:
+  quota_patterns: ["usage limit", "rate limit", "rate_limit", "429", "quota", "credit balance"]
+  auth_patterns: ["unauthorized", "401", "please log in", "not logged in", "invalid api key", "/login"]
+  network_patterns: ["econnrefused", "connection refused", "proxy error", "network is unreachable", "could not resolve host", "connect timeout", "etimedout",
+                     "routing discovery timed out", "error sending request", "i/o timeout", "stream disconnected", "tls handshake timeout"]
+  network_cooldown: 5m          # 网络错误：该 Agent 冷却一会儿，任务回队列等待，不记为失败
+  quota_cooldown: 60m
+  auth_cooldown: 6h
+  timeout_strikes: 3
+  timeout_cooldown: 30m
+  probe_interval: 10m
+
+# P2 / P3 任务在 Claude 周用量超线时改由 Codex 主跑（03 §3.3）。用量由 superops agents usage 登记。
+usage_policy:
+  claude:
+    p2_threshold: 0.7
+    p3_threshold: 0.5
+
+budgets:                      # 单日上限
+  popto_credits: 200
+  tikhub_requests: 2000
+  redfox_requests: 500
+
+# 数据保留期（08 §6 / §7），每天 04:30 由「数据保留清理」执行；试运行：superops retention --dry-run
+retention:
+  runs_days: 90               # 运行目录、发布截图、WorkBuddy 收发件箱；内容库还引用的脚本 / 发布包 / PRD 先挪到 content/_archived_runs/
+  text_days: 170              # 触发 / 工单输入与报告 / 消息的正文、需求信号原话（可能带评论原文）；元数据永久保留
+                              # 两个天数上限都是 170：周报会引用上一周的评论，留出余量，保证评论原文所有副本 180 天内删掉
+  log_max_mb: 20              # 日志超过就轮转
+  log_keep: 2
+
+quiet_hours: "22:30-08:00"
+max_cards_per_day: 10
+max_tell_always_rules: 4
+card_default_ttl: 24h
+alert_after_unavailable: 2h
+
+# 钉钉发消息用的身份（收哪些群、谁能批红在 policy.yaml / local.yaml 的 sources.dingtalk 和 policy.sources.dingtalk）。
+notifier:
+  bot_name: 兔管家            # 群里 @ 它或以它开头的消息算“对 Agent 说的”
+  dingtalk:
+    identity: user            # user | bot（bot 需 robot_code）
+    robot_code: null
+    at_on_alert: []           # 告警（P0）时 @ 的人
+
+# 需求打分（与 ops-weekly-review Skill 同一公式）：需求分 = Σ(意图强度 × 人群权重) × 价值系数 ÷ 成本
+# 入库时先算初始分，周报再按上下文调整。人群按关键词匹配信号的 persona。
+demand_scoring:
+  persona_weights:
+    金融: 1.5
+    保险: 1.5
+    MCN: 1.5
+    法律: 1.2
+    财税: 1.2
+    教育: 1.2
+    职场: 1.2
+    商业: 1.2
+  default_persona_weight: 1.0
+  value_factors:          # 需求 kind / 标题里出现关键词时的价值系数（取最大）
+    付费: 1.5
+    计费: 1.5
+    首条完成: 1.3
+    注册: 1.3
+  cost: {S: 1, M: 2, L: 4}
+
+# 创作者后台自动发布（Playwright + 本机 Chrome，登录：superops publish login <平台>）
+# mode：off 人工发布 / dry_run 自动填好停在发布前并截图（仍推人工发布）/ live 真发布（失败自动转人工）
+# 测试内容（meta.is_test）最多 dry_run。
+publishers:
+  douyin: {mode: dry_run}
+  wechat_channels: {mode: dry_run}
+  xiaohongshu: {mode: dry_run}

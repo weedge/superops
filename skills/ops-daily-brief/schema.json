@@ -1,0 +1,19 @@
+{
+  "description": "每日运营日报",
+  "required": [
+    "message_markdown"
+  ],
+  "properties": {
+    "message_markdown": {
+      "type": "string",
+      "minLength": 20
+    },
+    "highlights": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 3
+    }
+  }
+}

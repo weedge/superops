@@ -1,0 +1,107 @@
+{
+  "description": "GEO 检查",
+  "required": [
+    "results",
+    "coverage"
+  ],
+  "properties": {
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "assistant",
+          "question",
+          "collected",
+          "mentioned"
+        ],
+        "properties": {
+          "assistant": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "collected": {
+            "type": "boolean",
+            "description": "是否拿到了这个助手对这个问题的完整回答。登录墙、验证码、拦截话术、超时都算没拿到"
+          },
+          "mentioned": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "回答里是否提到 Popto / 爆款兔；collected 为 false 时必须是 null"
+          },
+          "blocked_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "collected 为 false 时写原因：未登录 / 验证码 / 被拦截 / 超时 / 其他"
+          },
+          "rank": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "screenshot": {
+            "type": "string"
+          }
+        },
+        "if": {
+          "properties": {
+            "collected": {
+              "const": false
+            }
+          },
+          "required": [
+            "collected"
+          ]
+        },
+        "then": {
+          "properties": {
+            "mentioned": {
+              "type": "null"
+            }
+          }
+        }
+      }
+    },
+    "recommendations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "required": [
+        "planned",
+        "collected"
+      ],
+      "properties": {
+        "planned": {
+          "type": "integer"
+        },
+        "collected": {
+          "type": "integer"
+        },
+        "mentioned": {
+          "type": "integer"
+        }
+      },
+      "description": "计划检查的“平台 × 问题”数、成功采集数、其中提到我们的数"
+    }
+  }
+}

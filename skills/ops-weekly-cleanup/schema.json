@@ -1,0 +1,28 @@
+{
+  "description": "周日大扫除",
+  "properties": {
+    "mrs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "ops_cleanup": {
+      "type": "object",
+      "properties": {
+        "deactivate_terms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "expire_topics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
