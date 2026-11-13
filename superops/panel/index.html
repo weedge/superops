@@ -809,6 +809,32 @@ a.dm-link:hover { text-decoration: none; filter: brightness(1.15); }
   .jn.to-r::after, .jn.to-l::after, .jn.to-d::after { content: ""; left: 50%; right: auto; top: auto; bottom: -27px; width: 2px; height: 26px; }
   .jn.flow.to-r::after, .jn.flow.to-l::after, .jn.flow.to-d::after { background-image: linear-gradient(180deg, transparent 0 30%, var(--jc) 45% 55%, transparent 70%); background-size: 100% 200%; animation: jflowd 1.4s linear infinite; }
 }
+/* 获客：漏斗、跟进看板 */
+.gfun .dflow-s em { display: block; margin-top: 2px; font-style: normal; font-size: 11.5px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kb { display: grid; grid-template-columns: repeat(var(--cols), minmax(250px, 1fr)); gap: 12px; align-items: start; overflow-x: auto; padding-bottom: 4px; }
+.kb-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 10px; border: 1px solid var(--line2); border-top: 2px solid var(--kc); border-radius: 14px; background: rgba(10, 13, 19, .55); }
+.kb-h { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 13.5px; }
+.kb-h i { width: 8px; height: 8px; border-radius: 50%; background: var(--kc); box-shadow: 0 0 8px var(--kc); }
+.kb-h b { margin-left: auto; font: 600 13px var(--mono); color: var(--kc); }
+.kb-tip { margin-top: -6px; font-size: 11.5px; line-height: 1.5; color: var(--faint); }
+.kb-empty { padding: 18px 0; text-align: center; color: var(--faint); border: 1px dashed var(--line); border-radius: 10px; }
+.lead.kl { gap: 8px; padding: 11px 12px; }
+.lead.kl .lead-ava { width: 32px; height: 32px; font-size: 14px; }
+.lead.kl .lead-n { font-size: 14px; }
+.lead.kl .lead-score { width: 42px; height: 34px; }
+.lead.kl .lead-score b { font-size: 15px; }
+.kl-why { font-size: 12.5px; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.lead.kl .bubble-t { font-size: 12.5px; }
+.kl-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.kl-t { font: 11px var(--mono); color: var(--faint); text-align: right; }
+.tw.zero .tw-w { color: var(--faint); }
+.tw.zero .tw-bar b { color: var(--faint); }
+@media (max-width: 900px) {
+  .kb { grid-template-columns: minmax(0, 1fr); overflow: visible; }
+  .gfun { flex-wrap: wrap; }
+  .gfun .dflow-s { flex: 1 1 40%; }
+  .gfun .dflow-a { display: none; }
+}
 </style>
 </head>
 <body>
@@ -2091,61 +2117,99 @@ const STAGE_COLOR = { 待跟进: 'var(--c-orange)', 已评论: 'var(--c-cyan)', 
 const TERM_COLOR = { pain: 'var(--c-orange)', solution: 'var(--c-cyan)', competitor: 'var(--c-pink)', brand: 'var(--c-green)', persona: 'var(--c-purple)' };
 function fans(n) { n = Number(n); if (!isFinite(n) || n <= 0) return '—'; return n >= 10000 ? `${+(n / 10000).toFixed(n >= 100000 ? 0 : 1)}万` : num(n); }
 function growthPage(g, r, days) {
-  const leads = g.leads || [], terms = g.terms || [];
-  const stageN = Object.fromEntries((g.stages || []).map((x) => [x.label, x.n]));
-  const manual = leads.filter((x) => x.comment_status === 'manual' || x.comment_status === 'unconfirmed');
-  const sent = leads.filter((x) => x.comment_status === 'sent').length;
+  const all = g.leads || [], terms = g.terms || [], fn = g.funnel || {};
+  const plats = [...new Set(all.map((x) => x.platform))];
+  const lp = plats.includes(r.q.lp) ? r.q.lp : '';
+  const leads = lp ? all.filter((x) => x.platform === lp) : all;
+  const ARCHIVE = ['不跟进', '粉丝不足'];
+  const isManual = (x) => x.comment_text && (x.comment_status === 'manual' || x.comment_status === 'unconfirmed');
+  const todo = all.filter((x) => x.stage === '待跟进');
+  const sent = all.filter((x) => x.comment_status === 'sent').length;
   const activeTerms = terms.filter((t) => t.active), hits = activeTerms.reduce((a, t) => a + (t.hits_7d || 0), 0);
   const kpi = (v, label, color, hot) => `<div class="kpi${hot ? ' hot' : ''}" style="--kc:${color}"><b>${v}</b><small>${label}</small></div>`;
   const kpis = `<div class="kpis">${[
     kpi(num(g.total), '线索', 'var(--c-cyan)'),
-    kpi(num(leads.filter((x) => Number(x.score) >= 80).length), '高分线索（≥80）', 'var(--c-orange)'),
+    kpi(num(todo.length), `待跟进${all.filter(isManual).length ? ` · ${all.filter(isManual).length} 条评论要你发` : ''}`, 'var(--c-orange)', todo.length > 0),
     kpi(num(sent), '评论已发出', 'var(--c-green)'),
-    kpi(num(manual.length), '评论要人去发', 'var(--c-yellow)', manual.length > 0),
+    kpi(num(fn.contacted || 0), `已联系 · 回复 ${num(fn.replied || 0)}`, 'var(--c-blue)'),
     kpi(num(activeTerms.length), `在用意图词 / 共 ${terms.length}`, 'var(--c-purple)'),
     kpi(num(hits), '意图词近 7 天命中', 'var(--c-pink)'),
   ].join('')}</div>`;
-  const order = ['待跟进', '已评论', '已联系', '已回复', '粉丝不足', '不跟进'];
-  const stages = (g.stages || []).slice().sort((a, b) => ((order.indexOf(a.label) + 1) || 99) - ((order.indexOf(b.label) + 1) || 99));
-  const flow = `<div class="dflow">${stages.map((x) => `<div class="dflow-s" style="--fc:${STAGE_COLOR[x.label] || 'var(--c-blue)'}"><b>${num(x.n)}</b><span>${esc(x.label)}</span></div>`).join('')}</div>`;
+
+  /* 监听漏斗：采到的作品 → 线索 → 上卡片 → 评论发出 → 已联系 → 已回复，每一步写转化率 */
+  const steps = [['监听到作品 · 7 天', fn.mentions_7d, 'var(--c-blue)', (fn.mention_platforms || []).map((x) => `${bl(x.label)} ${num(x.n)}`).join(' · ')],
+    ['判成线索', fn.leads, 'var(--c-cyan)'], ['上过线索卡片', fn.carded, 'var(--c-purple)', '粉丝不足的不上卡'],
+    ['评论发出', fn.commented, 'var(--c-green)'], ['已联系', fn.contacted, 'var(--c-orange)'], ['已回复', fn.replied, 'var(--c-pink)']];
+  const rate = (a, b) => (b ? `${Math.round(a / b * 100)}%` : '—');
+  const funnel = `<div class="dflow gfun">${steps.map(([label, n, c, tip], i) => `<div class="dflow-s${n ? '' : ' zero'}" style="--fc:${c}"${tip ? ` title="${esc(tip)}"` : ''}>
+      <b>${num(n || 0)}</b><span>${label}</span>${i ? `<em>上一步的 ${rate(n || 0, steps[i - 1][1])}</em>` : `<em>${esc(tip || '')}</em>`}</div>${i < steps.length - 1 ? '<i class="dflow-a">›</i>' : ''}`).join('')}</div>`;
+
+  /* 看板：按跟进阶段分栏；不跟进 / 粉丝不足归档到下面 */
+  const COLS = [['卡片待批', (x) => ['发现', '已发卡'].includes(x.stage || '发现'), 'var(--c-purple)', '在今日线索卡片上，等你回答'],
+    ['待跟进', (x) => x.stage === '待跟进', 'var(--c-orange)', '你批了要跟进的：评论要你发的先发，私信了点“已联系”'],
+    ['已评论', (x) => x.stage === '已评论', 'var(--c-cyan)', '品牌号已在作品下评论，等对方回应'],
+    ['已联系', (x) => x.stage === '已联系', 'var(--c-blue)', '已经私信或加了联系方式'],
+    ['已回复', (x) => x.stage === '已回复', 'var(--c-green)', '对方回应了：转人工深聊']];
+  const cols = COLS.filter(([label, f]) => label !== '卡片待批' || leads.some(f));
+  const act = (x, stage, label, primary) => `<button class="btn small${primary ? ' primary' : ''}" data-act="lead-stage" data-id="${esc(x.id)}" data-stage="${stage}" data-name="${esc(x.nickname || x.id)}">${label}</button>`;
+  const card = (x) => {
+    const pc = PLATFORM_COLOR[x.platform] || 'var(--c-cyan)', sc = Number(x.score) || 0;
+    const [cs, ct] = COMMENT_STATE[x.comment_status] || [x.comment_text ? '评论还没发' : '', ''];
+    const name = x.profile_url ? `<a href="${esc(x.profile_url)}" target="_blank" rel="noopener" title="打开主页">${esc(x.nickname || x.id)}</a>` : esc(x.nickname || x.id);
+    const acts = [], toSend = isManual(x) || (x.stage === '待跟进' && x.comment_text && x.comment_status !== 'sent');
+    if (toSend) {
+      acts.push(`<button class="btn small" data-act="copy" data-copy="${esc(x.comment_text)}">复制评论</button>`);
+      if (x.target_url) acts.push(`<a class="btn small" href="${esc(x.target_url)}" target="_blank" rel="noopener">去原帖 ↗</a>`);
+      acts.push(`<button class="btn small primary" data-act="lead-commented" data-id="${esc(x.id)}" data-name="${esc(x.nickname || x.id)}">我已发评论</button>`);
+    }
+    if (x.stage === '待跟进') acts.push(act(x, '已联系', '已联系'));
+    if (x.stage === '已评论') acts.push(act(x, '已回复', '对方回复了', true), act(x, '已联系', '已联系'));
+    if (x.stage === '已联系') acts.push(act(x, '已回复', '对方回复了', true));
+    if (['待跟进', '已评论', '已联系', '已回复'].includes(x.stage)) acts.push(`<button class="btn small ghost" data-act="lead-skip" data-id="${esc(x.id)}" data-name="${esc(x.nickname || x.id)}">不跟进…</button>`);
+    return `<article class="lead kl${isManual(x) ? ' hot' : ''}" style="--pc:${pc}">
+      <div class="lead-h"><span class="lead-ava">${esc(Array.from(String(x.nickname || '?'))[0])}</span>
+        <div class="lead-id"><div class="lead-n">${name}</div><div class="lead-sub"><span class="plat">${esc(bl(x.platform))}</span>${x.industry ? `<span>${esc(x.industry)}</span>` : ''}<span>${esc(bl(x.lead_type))}</span><span>粉丝 <b>${fans(x.followers)}</b></span></div></div>
+        <div class="lead-score ${sc >= 80 ? 'hi' : sc >= 60 ? 'mid' : 'lo'}" title="线索分"><b>${num(Math.round(sc))}</b></div></div>
+      ${x.why ? `<div class="lead-why kl-why" title="${esc(x.why)}">${esc(x.why)}</div>` : ''}
+      ${x.comment_text ? `<div class="bubble${ct ? ' ' + ct : ''}"><div class="bubble-h"><span>${esc(cs)}</span>${x.commented_at ? `<span class="mono">${T(x.commented_at)}</span>` : ''}${x.target_url && !toSend ? `<a href="${esc(x.target_url)}" target="_blank" rel="noopener">看原帖 ↗</a>` : ''}</div>
+        <div class="bubble-t">${esc(x.comment_text)}</div>${x.comment_note && x.comment_status !== 'sent' ? `<div class="bubble-n">${esc(x.comment_note)}</div>` : ''}</div>`
+        : x.comment_status === 'manual' ? `<div class="pnote hot">要你去互动：${esc(x.comment_note || '还没有拟好的评论')}</div>` : ''}
+      ${x.outreach_draft ? `<details class="inline" data-k="lead:${esc(x.id)}"${S.ui.open['lead:' + x.id] ? ' open' : ''}><summary>跟进建议</summary><div class="lead-why">${esc(x.outreach_draft)}</div></details>` : ''}
+      ${acts.length ? `<div class="kl-acts">${acts.join('')}</div>` : ''}
+      <div class="kl-t">${T(x.updated_at)}</div>
+    </article>`;
+  };
+  const platChips = plats.length > 1 ? `<div class="filters">${[['', '全部平台', all.length], ...plats.map((p) => [p, bl(p), all.filter((x) => x.platform === p).length])]
+    .map(([k, label, n]) => `<a class="fchip${k === lp ? ' on' : ''}" href="${H('business', { tab: 'growth', days, lp: k })}">${esc(label)}<b class="num">${n}</b></a>`).join('')}</div>` : '';
+  const board = `<section class="sec"><h2>跟进看板 <span class="cnt">${leads.filter((x) => !ARCHIVE.includes(x.stage)).length}</span><span class="hint">按跟进阶段分栏，栏里按分数排；你自己发了评论、私信了、对方回了，在卡片上点一下，阶段就往右挪。只改记录，不会对外发任何东西</span></h2>
+    ${platChips}<div class="kb" style="--cols:${cols.length}">${cols.map(([label, f, c, tip]) => {
+      const xs = leads.filter(f);
+      return `<div class="kb-col" style="--kc:${c}"><div class="kb-h" title="${esc(tip)}"><i></i>${label}<b>${xs.length}</b></div><div class="kb-tip">${esc(tip)}</div>
+        ${xs.map(card).join('') || '<div class="kb-empty">—</div>'}</div>`;
+    }).join('')}</div></section>`;
+  const archived = leads.filter((x) => ARCHIVE.includes(x.stage));
+  const archHtml = archived.length ? fold('lead-archive', `不跟进 / 粉丝不足 <span class="cnt">${archived.length}</span><span class="hint">你选了不跟进的，和粉丝数不够、没上卡片的；想跟进可以拉回“待跟进”</span>`,
+    `<div class="list">${archived.map((x) => `<div class="row"><div class="row-main"><div class="row-head"><span class="plat-tag" style="--pc:${PLATFORM_COLOR[x.platform] || 'var(--c-cyan)'}">${esc(bl(x.platform))}</span>
+      <b>${x.profile_url ? `<a href="${esc(x.profile_url)}" target="_blank" rel="noopener">${esc(x.nickname || x.id)}</a>` : esc(x.nickname || x.id)}</b><span class="stg" style="--sc:${STAGE_COLOR[x.stage]}">${esc(x.stage)}</span>
+      <span class="faint">${esc(x.industry || '')} · 粉丝 ${fans(x.followers)} · ${num(Math.round(Number(x.score) || 0))} 分</span></div>
+      ${x.why ? `<div class="row-sub clamp">${esc(x.why)}</div>` : ''}</div>
+      <div class="row-meta">${act(x, '待跟进', '拉回待跟进')}</div></div>`).join('')}</div>`, false, true) : '';
+
   const dists = `<div class="dgrid3"><div class="panel"><div class="ptitle-s">平台</div>${hbars(g.platforms, (g.platforms || []).map((x) => PLATFORM_COLOR[x.label] || 'var(--c-cyan)'))}</div>
     <div class="panel"><div class="ptitle-s">类型</div>${hbars(g.types, ['var(--c-cyan)', 'var(--c-purple)', 'var(--c-orange)', 'var(--c-green)'])}</div>
     <div class="panel"><div class="ptitle-s">行业</div>${hbars((g.industries || []).slice(0, 6), ['var(--c-blue)', 'var(--c-pink)', 'var(--c-yellow)', 'var(--c-green)', 'var(--c-purple)', 'var(--c-cyan)'])}</div></div>`;
 
-  /* 线索卡片：可按跟进阶段、评论状态筛 */
-  const FILTERS = [['all', '全部', () => true], ['todo', '待跟进', (x) => x.stage === '待跟进'], ['manual', '评论要人发', (x) => x.comment_status === 'manual' || x.comment_status === 'unconfirmed'],
-    ['sent', '评论已发出', (x) => x.comment_status === 'sent'], ['draft', '评论没发', (x) => x.comment_text && !x.comment_status], ['skip', '不跟进 / 粉丝不足', (x) => x.stage === '不跟进' || x.stage === '粉丝不足']];
-  const cur = FILTERS.find((f) => f[0] === r.q.ls) || FILTERS[0];
-  const rows = leads.filter(cur[2]);
-  const filterHtml = FILTERS.map(([k, label, fn]) => `<a class="fchip${k === cur[0] ? ' on' : ''}" href="${H('business', { tab: 'growth', days, ls: k })}">${label}<b class="num">${leads.filter(fn).length}</b></a>`).join('');
-  const card = (x) => {
-    const pc = PLATFORM_COLOR[x.platform] || 'var(--c-cyan)', [cs, ct] = COMMENT_STATE[x.comment_status] || [x.comment_text ? '评论还没发' : '', ''];
-    const sc = Number(x.score) || 0, dim = x.stage === '不跟进' || x.stage === '粉丝不足';
-    const name = x.profile_url ? `<a href="${esc(x.profile_url)}" target="_blank" rel="noopener" title="打开主页">${esc(x.nickname || x.id)}</a>` : esc(x.nickname || x.id);
-    return `<article class="lead${dim ? ' dim' : ''}${x.comment_status === 'manual' ? ' hot' : ''}" style="--pc:${pc}">
-      <div class="lead-h"><span class="lead-ava">${esc(Array.from(String(x.nickname || '?'))[0])}</span>
-        <div class="lead-id"><div class="lead-n">${name}</div><div class="lead-sub"><span class="plat">${esc(bl(x.platform))}</span>${x.industry ? `<span>${esc(x.industry)}</span>` : ''}<span>${esc(bl(x.lead_type))}</span><span>粉丝 <b>${fans(x.followers)}</b></span></div></div>
-        <div class="lead-score ${sc >= 80 ? 'hi' : sc >= 60 ? 'mid' : 'lo'}" title="线索分"><b>${num(Math.round(sc))}</b></div></div>
-      <div class="lead-stage"><span class="stg" style="--sc:${STAGE_COLOR[x.stage] || 'var(--c-blue)'}">${esc(x.stage || '—')}</span><span class="faint mono">${T(x.updated_at)}</span></div>
-      ${x.why ? `<div class="lead-why">${esc(x.why)}</div>` : ''}
-      ${x.comment_text || x.comment_status ? `<div class="bubble${ct ? ' ' + ct : ''}"><div class="bubble-h"><span>${esc(cs)}</span>${x.commented_at ? `<span class="mono">${T(x.commented_at)}</span>` : ''}${x.target_url ? `<a href="${esc(x.target_url)}" target="_blank" rel="noopener">看原帖 ↗</a>` : ''}</div>
-        ${x.comment_text ? `<div class="bubble-t">${esc(x.comment_text)}</div>` : '<div class="bubble-n">还没有拟好的评论</div>'}${x.comment_note ? `<div class="bubble-n">${esc(x.comment_note)}</div>` : ''}</div>` : ''}
-      ${x.outreach_draft ? `<details class="inline" data-k="lead:${esc(x.id)}"${S.ui.open['lead:' + x.id] ? ' open' : ''}><summary>跟进建议</summary><div class="lead-why">${esc(x.outreach_draft)}</div></details>` : ''}
-    </article>`;
-  };
-  const pool = `<section class="sec"><h2>线索 <span class="cnt">${rows.length}</span><span class="hint">按分数排；点昵称打开主页，“看原帖”是评论发在哪条作品下</span></h2>
-    <div class="filters">${filterHtml}</div>${rows.length ? `<div class="leads">${rows.map(card).join('')}</div>` : '<div class="quiet">这一类没有线索</div>'}</section>`;
-
-  /* 意图词：按类别分组，命中数画成条 */
+  /* 意图词：按类别分组，组内命中多的在前；近 7 天零命中的变暗 */
   const maxHit = Math.max(1, ...terms.map((t) => t.hits_7d || 0));
   const cats = Object.keys(TERM_CAT).concat([...new Set(terms.map((t) => t.category))].filter((c) => !TERM_CAT[c]));
-  const termRow = (t) => `<div class="tw${t.active ? '' : ' off'}"><div class="tw-top"><span class="tw-w">${esc(t.term)}</span>
+  const termRow = (t) => `<div class="tw${t.active ? '' : ' off'}${t.active && !t.hits_7d ? ' zero' : ''}"><div class="tw-top"><span class="tw-w">${esc(t.term)}</span>
       <span class="tw-act"><button class="btn small" data-act="term-edit" data-op="${t.active ? 'disable' : 'enable'}" data-term="${esc(t.term)}">${t.active ? '停用' : '启用'}</button><button class="btn small" data-act="term-remove" data-term="${esc(t.term)}" title="删除">×</button></span></div>
     <div class="tw-bar"><span class="hbar-t"><i style="width:${Math.max(2, Math.round((t.hits_7d || 0) / maxHit * 100))}%;--bc:var(--tc)"></i></span><b>${num(t.hits_7d || 0)}</b></div></div>`;
-  const groups = cats.map((c) => [c, terms.filter((t) => t.category === c)]).filter(([, xs]) => xs.length);
-  const termsHtml = `<section class="sec"><h2>监听的意图词 <span class="cnt">${terms.length}</span><span class="hint">每天的社媒监听按“在用”的词去各平台搜；条是近 7 天命中数。停用的保留命中记录，删除的不再出现</span><button class="btn primary" style="margin-left:auto" data-act="term-add">添加意图词…</button></h2>
+  const groups = cats.map((c) => [c, terms.filter((t) => t.category === c).sort((a, b) => (b.active - a.active) || ((b.hits_7d || 0) - (a.hits_7d || 0)))]).filter(([, xs]) => xs.length);
+  const zero = activeTerms.filter((t) => !t.hits_7d).length;
+  const termsHtml = `<section class="sec"><h2>监听的意图词 <span class="cnt">${terms.length}</span><span class="hint">每天的社媒监听按“在用”的词去各平台搜；条是近 7 天命中数，组内命中多的在前${zero ? `；${zero} 个在用的词近 7 天零命中（变暗），可以换个说法或停用，周日大扫除也会建议` : ''}</span><button class="btn primary" style="margin-left:auto" data-act="term-add">添加意图词…</button></h2>
     ${groups.length ? `<div class="tgroups">${groups.map(([c, xs]) => `<div class="panel tgroup" style="--tc:${TERM_COLOR[c] || 'var(--c-blue)'}"><div class="tgroup-h"><i></i>${esc(TERM_CAT[c] || c || '未分类')}<span>${xs.filter((t) => t.active).length}/${xs.length} 在用 · 命中 ${num(xs.reduce((a, t) => a + (t.hits_7d || 0), 0))}</span></div>${xs.map(termRow).join('')}</div>`).join('')}</div>` : '<div class="quiet">没有监听词</div>'}</section>`;
-  return `<section class="sec">${kpis}${flow}</section><section class="sec">${dists}</section>${pool}${termsHtml}`;
+  return `<section class="sec">${kpis}${funnel}</section>${board}${archHtml ? `<section class="sec">${archHtml}</section>` : ''}<section class="sec">${dists}</section>${termsHtml}`;
 }
 VIEWS.business = ({ biz: b, pub }, r) => {
   const days = r.q.days === '30' ? 30 : 7, tab = r.q.tab || 'summary';
@@ -2576,6 +2640,16 @@ const ACTIONS = {
     el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600);
   },
   'journey-pick': (b) => { S.ui.journey = b.dataset.id || null; load(); },
+  'lead-stage': (b) => act(b, () => post('/api/leads', { action: 'stage', id: b.dataset.id, stage: b.dataset.stage }), `「${b.dataset.name}」改成${b.dataset.stage}`),
+  async 'lead-skip'(b) {
+    const ok = await ask({ title: `不跟进「${b.dataset.name}」？`, ok: '不跟进', body: '<p>挪到下面的“不跟进”里，随时能拉回来。只改记录，不会对外发任何东西。</p>',
+      input: { label: '原因（可不填）', placeholder: '例如：对方是同行 / 粉丝太少 / 没回应' } });
+    if (ok) act(b, () => post('/api/leads', { action: 'stage', id: b.dataset.id, stage: '不跟进', note: ok.value }), `「${b.dataset.name}」不跟进了`);
+  },
+  async 'lead-commented'(b) {
+    const ok = await ask({ title: `已经用品牌号给「${b.dataset.name}」发了评论？`, ok: '登记已发', body: '<p>登记成“评论已发出”，挪到“已评论”栏；系统之后不会再自动发这条。</p>' });
+    if (ok) act(b, () => post('/api/leads', { action: 'commented', id: b.dataset.id }), '已登记，挪到“已评论”');
+  },
   async 'term-add'(b) {
     const ok = await ask({ title: '添加监听意图词', ok: '添加', body: '<p>下一次社媒监听（每天 14:00）开始按这个词去各平台搜近 24 小时的内容。删掉过的词再加一次就恢复。</p>',
       input: { label: '词', placeholder: '例如：保险团队长怎么带新人' }, select: { label: '类别', options: Object.entries(TERM_CAT) } });

@@ -210,6 +210,41 @@ def demands_action(rt, body: dict) -> dict:
     finally:
         ops.close()
 
+
+LEAD_STAGES = ("待跟进", "已联系", "已回复", "不跟进")    # 人在面板上能改到的阶段；已评论由发评论的脚本或“我已发评论”写
+
+
+def leads_action(rt, body: dict) -> dict:
+    """线索上人做的事：stage 改跟进阶段（自己私信了 → 已联系，对方回了 → 已回复，不跟了 → 不跟进，归档的拉回 → 待跟进）；
+    commented 人自己用品牌号把卡片上的评论发出去了，登记成“评论已发出”（之后不会再自动发这条）。只改业务库，不对外发任何东西。"""
+    from ..biz import db as bizdb
+    from ..core.model import now_iso
+    action, lid = str(body.get("action") or ""), str(body.get("id") or "")
+    ops = bizdb.open_ops()
+    try:
+        row = ops.execute("SELECT id, stage, comment_status FROM leads WHERE id=?", (lid,)).fetchone()
+        if not row:
+            raise ApiError(404, f"没有线索 {lid}")
+        at = now_iso()
+        if action == "stage":
+            stage = str(body.get("stage") or "")
+            if stage not in LEAD_STAGES:
+                raise ApiError(400, f"阶段只能是 {' / '.join(LEAD_STAGES)}")
+            note = str(body.get("note") or "").strip()[:300]
+            ops.execute("UPDATE leads SET stage=?, comment_note=COALESCE(NULLIF(?, ''), comment_note), updated_at=? WHERE id=?", (stage, note, at, lid))
+        elif action == "commented":
+            if row["comment_status"] == "sent":
+                raise ApiError(409, "这条评论已经登记为发出")
+            ops.execute("UPDATE leads SET stage='已评论', comment_status='sent', commented_at=?, comment_note=?, updated_at=? WHERE id=?",
+                        (at, "人用品牌号发的（面板登记）", at, lid))
+        else:
+            raise ApiError(400, f"不认识的动作 {action}")
+        ops.commit()
+        return {"ok": True, "id": lid, **{k: v for k, v in dict(ops.execute("SELECT stage, comment_status FROM leads WHERE id=?", (lid,)).fetchone()).items()}}
+    finally:
+        ops.close()
+
+
 def publish_packs_action(rt, body: dict) -> dict:
     """approve：等于在群里批了发布卡片——发出带人工批准凭据的 content.publish.approved，按各平台的发布模式执行；
     record：人在平台上发完了，补登记（可带作品链接）；try / retry：交给发布台的子进程。"""
@@ -326,6 +361,8 @@ def handle_get(rt, path: str, q: dict) -> dict | list:
 
 def handle_post(rt, path: str, body: dict, trusted: bool = False) -> dict | list:
     """trusted = 请求带着宿主交给确定性脚本的令牌。只有这样发来的事件才能越过“需要人批准”的守门。"""
+    if path == "/api/leads":     # 线索：{action: stage, id, stage: 待跟进|已联系|已回复|不跟进, note?} / {action: commented, id}
+        return leads_action(rt, body)
     if path == "/api/demands":   # 需求池：{action: approve|watch|shelve|reopen, id, confirm?, reason?} 或 {action: add, text}
         return demands_action(rt, body)
     if path == "/api/publish/packs":

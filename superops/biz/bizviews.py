@@ -147,14 +147,24 @@ def _demand_view(ops) -> dict:
 
 
 def _growth_view(ops) -> dict:
+    since7 = iso(now() - timedelta(days=7))
+    stage_n = {r[0]: r[1] for r in ops.execute("SELECT COALESCE(stage, '发现'), COUNT(*) FROM leads GROUP BY 1")}
     return {
         "total": _count(ops, "SELECT COUNT(*) FROM leads"),
+        # 监听漏斗：近 7 天采到的作品 → 判成线索的（全部）→ 上过卡片的 → 评论发出 → 已联系 → 已回复
+        "funnel": {"mentions_7d": _count(ops, "SELECT COUNT(*) FROM mentions WHERE collected_at>=?", (since7,)),
+                   "mention_platforms": _dist(ops, "mentions", "platform", limit=8),
+                   "leads": sum(stage_n.values()),
+                   "carded": sum(n for s, n in stage_n.items() if s not in ("发现", "粉丝不足")),
+                   "commented": _count(ops, "SELECT COUNT(*) FROM leads WHERE comment_status='sent'"),
+                   "contacted": stage_n.get("已联系", 0) + stage_n.get("已回复", 0),
+                   "replied": stage_n.get("已回复", 0)},
         "stages": _dist(ops, "leads", "stage", limit=12), "types": _dist(ops, "leads", "lead_type", limit=12),
         "industries": _dist(ops, "leads", "industry", limit=12), "platforms": _dist(ops, "leads", "platform", limit=12),
         "leads": [{**r, "why": _clip(r["why"], 160), "outreach_draft": _clip(r["outreach_draft"], 200)} for r in db.rows(ops.execute(
             "SELECT id, platform, profile_url, nickname, industry, lead_type, followers, score, stage, why, outreach_draft,"
             " target_url, comment_text, comment_status, commented_at, comment_note, updated_at"
-            " FROM leads ORDER BY score DESC, updated_at DESC LIMIT 40"))],
+            " FROM leads ORDER BY score DESC, updated_at DESC LIMIT 300"))],
         "terms": db.rows(ops.execute("SELECT term, industry category, active, hits_7d, updated_at FROM listening_terms"
                                      " WHERE removed_at IS NULL ORDER BY active DESC, hits_7d DESC, term")),
     }
@@ -212,8 +222,8 @@ def business(days: int = 7) -> dict:
       is_test、shelved_reason 搁置原因）、total、status 分布、signals（total、unassigned 未归到需求的、source / kind 分布、
       kind_group 按大类（“体验优化 / 计费透明”算“体验优化”）、module 分布、recent 最近 50 条、unassigned_recent 没归到需求的
       30 条（强度高的在前），原话截到 240 字）。
-    - growth（获客 / 线索）：total、stages / types / industries / platforms 分布、leads（按分数排前 40）、
-      terms（监听意图词与近 7 天命中数）。
+    - growth（获客 / 线索）：total、funnel（近 7 天采到的作品数和平台分布、线索、上过卡片的、评论发出、已联系、已回复）、
+      stages / types / industries / platforms 分布、leads（按分数排前 300）、terms（监听意图词与近 7 天命中数）。
     - funnel（渠道漏斗，窗口内）：daily（按日期倒序，每天的 clicks / registrations / first_done / second_done / paid）、
       channels（按渠道码汇总，注册多的在前，最多 20 个）、totals、last_date（库里最新一天，用来看导出有没有断）。
 

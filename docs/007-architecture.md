@@ -315,6 +315,7 @@ flowchart TB
 | `tests/app/test_sources.py` | 定时来源（到点、补发、`max_late`、`requires`）和流水线来源（去重、线程、批准守门、防抖、线程关闭、内部事件） |
 | `tests/app/test_publishing.py` | 面板发布台：发布包预览按平台取文案和素材、媒体下载口拒绝目录外和非媒体文件、批准发布要确认且只批没发的、人工登记校验链接、浏览器动作同一平台只跑一个、退出登录挪走登录目录 |
 | `tests/app/test_demands_action.py` | 面板需求池：批准开发要确认、发出带人工批准凭据的 `demand.approved` 且只批没批过的、观察 / 搁置要原因 / 恢复、提新需求走 `demand.manual` |
+| `tests/app/test_leads_action.py` | 面板跟进看板：改跟进阶段只认四个阶段、可从归档拉回、登记自己发了评论（挪到已评论、不发事件、不重复登记）、获客视图的监听漏斗 |
 | `tests/app/test_panel.py` | 面板页面不依赖浏览器的检查：单文件、不引外部资源、由 `GET /` 送出、只调用存在的接口 |
 | `tests/app/test_settings.py` | 规则补全与校验、策略版本、规则匹配、准入、授权复核、批红权限、策略变更的影响 |
 | `tests/app/test_store.py` | Store 和内存仓库行为一致；事务与 `after_commit`、键值、回执、运行记录、数据保留 |
