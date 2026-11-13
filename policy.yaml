@@ -5,7 +5,7 @@
 eval:
   mode: observe          # off 不接主动候选 | observe 只记录“本来会接单”（默认，先看一阵）| auto 命中规则就接
   timeout_seconds: 600   # 主 Session 研判一个候选的时限；超时重排两次，第三次记为未完成
-  role: decide           # 主 Session 用哪条降级链（agents.yaml 的 fallback_chains）
+  role: route            # 主 Session 用哪条降级链、哪套模型（agents.yaml 的 fallback_chains.route 和 agents.<名>.models.route）
   effort: medium
 
 executor:

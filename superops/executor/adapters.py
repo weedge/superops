@@ -291,9 +291,8 @@ class CodexAdapter(Adapter):
             # 浏览器档：操作 opsd 预先开好的专用浏览器要连本机套接字（Chrome 本身不在沙箱里启动）；
             # run.network: true 的规则要调外部接口。只读档不放开（处理不可信内容时不能往外发）
             cmd += ["-c", "sandbox_workspace_write.network_access=true"]
-        if spec.effort:
-            eff = {"max": "xhigh"}.get(spec.effort, spec.effort)
-            cmd += ["-c", f"model_reasoning_effort={eff}"]
+        if spec.effort:      # Codex 0.166 起支持 low / medium / high / xhigh / max
+            cmd += ["-c", f"model_reasoning_effort={spec.effort}"]
         if spec.model or c.get("default_model"):
             cmd += ["-m", spec.model or c["default_model"]]
         if c.get("structured_output"):

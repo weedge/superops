@@ -128,7 +128,7 @@ flowchart TB
 
 - `direct(candidate)`：确定性的结果（规则直配及其各项检查），或返回 `None` 表示需要模型。批里有带批准凭据的事件时，即使强度是明确也走这条路，而且不看接单模式。
 - `semantic_rules(settings)`：需要主 Session 研判的规则，即启用、没有 `when`、没被单独暂停的；提示词的策略一节和 `_inferred` 的核对用同一个集合。
-- `route(candidate)`：拼主 Session 的提示词，经 AgentPool 按 `eval.role` 的降级链跑一次只读的调用，输出按 `ROUTE_SCHEMA` 校验；`apply` 把决定落到引擎上，推断候选的接单先过 `_inferred` 的核对。调用失败或决定被引擎拒绝记为未完成。
+- `route(candidate)`：拼主 Session 的提示词，经 AgentPool 按 `eval.role`（`route`）的降级链和这个角色的模型配置跑一次只读的调用，输出按 `ROUTE_SCHEMA` 校验；`apply` 把决定落到引擎上，推断候选的接单先过 `_inferred` 的核对。调用失败或决定被引擎拒绝记为未完成。
 
 ### 执行器
 
@@ -303,6 +303,7 @@ flowchart TB
 | `tests/test_core_smoke.py` | 相对原型多出来的部分：问题卡片与批红权限、自己产出的事件不回送、`notBefore` |
 | `tests/test_prompts_skills.py` | 提示词文件齐全且被拼进该去的角色；Skill 文案和 `policy.yaml` 互相对得上 |
 | `tests/test_docs.py` | 编号文档只链接到更早的编号文档；本地链接都能解析；没有合并冲突标记；本文的模块表和测试表没有遗漏；文档里提到的 `superops` 子命令都存在 |
+| `tests/test_check_models.py` | `superops check` 对 agents.yaml 模型和思考强度的校验：仓库里的配置本身没问题；角色、强度写错、主 Session 的角色没有降级链会报错，脚本类 Agent 配了模型会提醒 |
 | `tests/app/test_runtime.py` | 整个应用，用假 Agent 和真实的脚本子进程：明确请求、`observe`、人批准的动作在 `observe` 下照常执行、规则直配、脚本工单及其事件、卡片与只批明细、需要批准的事件、订阅把复核结论送回写稿工单、轮数上限、暂停、停止、输出里的密钥落库前打码、摘要 |
 | `tests/app/test_http_cli.py` | 管理 API 的视图和动作、`/v1/*` 脚本契约、跨站拒绝、钉钉来源的回答 / 跟进 / 指令 / 请求 |
 | `tests/app/test_preflight.py` | 启动检查：只查启用的规则用得到的、缺口发到 home 渠道且一天一次、全部就绪不出声、登录检查失败照实报告、缓存与复查 |
@@ -313,13 +314,14 @@ flowchart TB
 | `tests/app/test_housekeeping_assessor.py` | 到期处理（问题超时按安全选项、工单闲置）、`after` 的等待；研判：规则直配的各项检查（预算、`unless_live`）、语义规则的主动候选、主 Session 的转入和停止、研判失败与面板上的问题 |
 | `tests/app/test_sources.py` | 定时来源（到点、补发、`max_late`、`requires`）和流水线来源（去重、线程、批准守门、防抖、线程关闭、内部事件） |
 | `tests/app/test_publishing.py` | 面板发布台：发布包预览按平台取文案和素材、媒体下载口拒绝目录外和非媒体文件、批准发布要确认且只批没发的、人工登记校验链接、浏览器动作同一平台只跑一个、退出登录挪走登录目录 |
+| `tests/app/test_demands_action.py` | 面板需求池：批准开发要确认、发出带人工批准凭据的 `demand.approved` 且只批没批过的、观察 / 搁置要原因 / 恢复、提新需求走 `demand.manual` |
 | `tests/app/test_panel.py` | 面板页面不依赖浏览器的检查：单文件、不引外部资源、由 `GET /` 送出、只调用存在的接口 |
 | `tests/app/test_settings.py` | 规则补全与校验、策略版本、规则匹配、准入、授权复核、批红权限、策略变更的影响 |
 | `tests/app/test_store.py` | Store 和内存仓库行为一致；事务与 `after_commit`、键值、回执、运行记录、数据保留 |
 | `tests/app/test_effects.py` | 副作用队列：合并、并发上限、退避、`Later`、取消、健康项、停机续跑 |
 | `tests/app/test_outbox.py` | 发件箱：幂等、撤回、顺序、来源关着、暂停、静默时段、每日卡片上限 |
-| `tests/app/test_pool.py` | Agent 池：降级链、输出校验与重试、熔断与半开、排除 / 暂停 / 忙、用量策略、运行记录 |
-| `tests/executor/test_adapters.py` | 各 Agent 命令行怎么拼、工具档位、错误归类、会话续接、无动作提前结束、output.json 不是报告时用最后一条消息、Codex 续接的命令和续不上时新开 |
+| `tests/app/test_pool.py` | Agent 池：降级链、输出校验与重试、熔断与半开、排除 / 暂停 / 忙、用量策略、运行记录；按 Agent × 角色取模型和强度、规则的模型不串给降级的 Agent、旧库补上模型和强度两列 |
+| `tests/executor/test_adapters.py` | 各 Agent 命令行怎么拼（含模型和强度原样传下去、Codex 的 max 不降档）、工具档位、错误归类、会话续接、无动作提前结束、output.json 不是报告时用最后一条消息、Codex 续接的命令和续不上时新开 |
 | `tests/biz/test_biz_host_contract.py` | 脚本和宿主之间的契约：环境变量、stdout 最后一行 JSON、`HubClient` 访问的接口 |
 | `tests/biz/test_biz_publish_timing.py` | 自动发布的发布时间判定（定时 / 立即 / 顺延 / 超期）、发布包字段带进发布器、横封面生成、非 H.264 视频转码 |
 | `tests/biz/test_biz_units.py` | 钉钉指令解析、合并闸门、卡片渲染、指标采集（含手动采集）、入库（含测试需求标记、MR ↔ 需求关联）、合并后的线上核实、发布执行器、创作者后台取数 |

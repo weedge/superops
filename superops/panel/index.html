@@ -391,9 +391,13 @@ a.pill:hover { text-decoration: none; filter: brightness(1.08); }
 .agent-h { flex-wrap: wrap; row-gap: 4px; }
 .agent-h .nm { white-space: nowrap; }
 .agent-h .ttl { font: 500 11px/1.2 var(--sans, inherit); padding: 2px 7px; border-radius: 6px; color: color-mix(in srgb, var(--ac) 75%, var(--text)); background: color-mix(in srgb, var(--ac) 14%, transparent); border: 1px solid color-mix(in srgb, var(--ac) 35%, transparent); white-space: nowrap; }
-.agent-d { margin-top: 8px; font-size: 12px; line-height: 1.55; color: var(--muted); flex: 1; }
+.agent-d { margin-top: 8px; font-size: 12px; line-height: 1.55; color: var(--muted); }
 .agent.down .agent-d { color: var(--faint); }
-.agent-r { margin-top: 8px; padding-top: 7px; border-top: 1px dashed var(--line); font: 11px/1.5 var(--mono); color: var(--faint); }
+.agent-t { display: grid; gap: 3px; margin: 8px 0; font-size: 11.5px; }
+.agent-t div { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: baseline; min-width: 0; }
+.agent-t code { flex: none; padding: 0 5px; border-radius: 4px; font: 600 11px/17px var(--mono); color: var(--ac); background: color-mix(in srgb, var(--ac) 12%, transparent); }
+.agent-t span { color: var(--muted); }
+.agent-r { margin-top: auto; padding-top: 7px; border-top: 1px dashed var(--line); font: 11px/1.5 var(--mono); color: var(--faint); }
 .agent-r b { color: var(--muted); font-weight: 600; }
 .org-src { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; margin-top: 18px; font: 12px var(--mono); color: var(--faint); }
 .src { display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 9px; background: rgba(12, 16, 23, .9); color: var(--muted); }
@@ -727,6 +731,84 @@ a.dm-link:hover { text-decoration: none; filter: brightness(1.15); }
   .dup-t { flex-basis: 100%; white-space: normal; }
   .dup-m { margin-left: 0; }
 }
+/* 需求页：两列卡片、优先级矩阵、原话里的小链接 */
+.dms { grid-template-columns: repeat(auto-fill, minmax(540px, 1fr)); }
+.dm { grid-template-columns: 58px minmax(0, 1fr) 118px; gap: 14px; padding: 13px 14px; }
+.dm.shelved { opacity: .62; }
+.dm.flash { border-color: var(--c-cyan); box-shadow: 0 0 0 1px var(--c-cyan), 0 0 26px rgba(56, 208, 232, .25); }
+.dm-q1 { margin: 8px 0 0; padding: 6px 10px; border-left: 2px solid var(--c-purple); border-radius: 0 8px 8px 0; background: rgba(167, 139, 250, .06); color: #cdd3de; font-size: 12.5px; line-height: 1.6; }
+.dm-q1 > div { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.dm-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.dm-link.tk { color: var(--c-cyan); background: rgba(56, 208, 232, .12); }
+.qlink { display: inline-flex; margin: 0 2px; padding: 0 6px; border-radius: 5px; font-size: 11.5px; line-height: 18px; color: var(--c-cyan); background: rgba(56, 208, 232, .1); white-space: nowrap; vertical-align: 1px; }
+.qlink:hover { text-decoration: none; filter: brightness(1.2); }
+.tlink { padding: 0; border: 0; background: none; color: var(--link); font: inherit; cursor: pointer; }
+.tlink:hover { text-decoration: underline; }
+.pmx { display: grid; grid-template-columns: 92px repeat(3, minmax(0, 1fr)); gap: 6px; }
+.pmx-c { min-width: 0; }
+.pmx-h { padding: 0 4px 2px; font-size: 12px; font-weight: 600; text-align: center; }
+.pmx-r { display: flex; align-items: center; font-size: 12px; color: var(--muted); }
+.pmx-x { position: relative; display: flex; flex-direction: column; gap: 4px; min-height: 56px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: rgba(15, 19, 27, .82); }
+.pmx-x.zero { justify-content: center; align-items: center; background: rgba(15, 19, 27, .45); }
+.pmx-x.best { border-color: rgba(61, 220, 151, .5); background: linear-gradient(180deg, rgba(61, 220, 151, .1), transparent), rgba(15, 19, 27, .82); }
+.pmx-tip { position: absolute; top: -8px; right: 8px; padding: 0 6px; border-radius: 4px; font-size: 11px; line-height: 16px; color: #062; background: var(--c-green); }
+.pmx-i { display: flex; gap: 6px; align-items: baseline; width: 100%; padding: 3px 6px; border: 0; border-radius: 6px; background: rgba(255, 255, 255, .03); color: var(--text); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pmx-i:hover { background: rgba(56, 208, 232, .1); }
+.pmx-i b { flex: none; font: 600 11.5px var(--mono); color: var(--c-cyan); }
+@media (max-width: 900px) {
+  .dms { grid-template-columns: minmax(0, 1fr); }
+  .dm { grid-template-columns: 50px minmax(0, 1fr); }
+  .dm-side { grid-column: 2; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; text-align: left; }
+  .dm-time { margin: 0 0 0 auto; }
+  .pmx { grid-template-columns: 54px repeat(3, minmax(0, 1fr)); gap: 4px; }
+  .pmx-r { font-size: 11px; }
+  .pmx-i { font-size: 11.5px; white-space: normal; display: block; line-height: 1.45; }
+  .pmx-x { padding: 6px; }
+}
+/* 一条指令的旅程 */
+.jasks { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 10px; scrollbar-width: thin; }
+.jask { flex: none; display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; width: 210px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: rgba(15, 19, 27, .82); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.jask:hover { border-color: color-mix(in srgb, var(--kc) 50%, var(--line)); }
+.jask.on { border-color: var(--kc); box-shadow: 0 0 0 1px var(--kc), 0 0 18px color-mix(in srgb, var(--kc) 25%, transparent); }
+.jask-k { grid-row: span 2; align-self: start; padding: 0 6px; border-radius: 5px; font-size: 11px; line-height: 18px; color: var(--kc); background: color-mix(in srgb, var(--kc) 14%, transparent); white-space: nowrap; }
+.jask-t { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jask-m { font: 11px var(--mono); color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jbox { padding: 16px 18px 20px; border: 1px solid var(--line); border-radius: 16px; background: radial-gradient(ellipse at 50% 0%, rgba(56, 208, 232, .06), transparent 60%), rgba(10, 13, 19, .6); }
+.jsum { margin-bottom: 14px; font-size: 13px; color: var(--muted); }
+.jsum b { font-family: var(--mono); color: var(--text); }
+.jlive { color: var(--c-orange); }
+.jgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 40px 36px; }
+.jn { position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 11px 13px; border: 1px solid color-mix(in srgb, var(--jc) 45%, var(--line)); border-radius: 12px; background: linear-gradient(180deg, color-mix(in srgb, var(--jc) 9%, transparent), transparent 70%), rgba(15, 19, 27, .9); }
+.jn.you { border-style: dashed; }
+.jn-wait { opacity: .55; }
+.jn-live { box-shadow: 0 0 0 1px var(--jc), 0 0 22px color-mix(in srgb, var(--jc) 30%, transparent); }
+.jn-h { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.jn-i { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; font: 600 11px var(--mono); color: #0b0e14; background: var(--jc); box-shadow: 0 0 8px var(--jc); }
+.jn-t { margin-left: auto; font: 600 12px var(--mono); color: var(--jc); }
+.jn-m { font-weight: 600; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.jn-b { font-size: 12px; line-height: 1.55; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.jn-n { font-size: 11.5px; color: var(--warn); }
+.jn-f { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: auto; padding-top: 4px; border-top: 1px dashed var(--line2); font-size: 11px; color: var(--faint); }
+.jn-f code { font: 11px var(--mono); color: var(--c-purple); }
+/* 连线：去程向右，最右一站向下，回程向左；数据流动时有光点在线上跑 */
+.jn::after { content: none; position: absolute; border-radius: 2px; background: color-mix(in srgb, var(--jc) 35%, var(--line)); }
+.jn.to-r::after, .jn.to-l::after { content: ""; top: 50%; width: 36px; height: 2px; }
+.jn.to-r::after { right: -37px; }
+.jn.to-l::after { left: -37px; }
+.jn.to-d::after { content: ""; left: 50%; bottom: -41px; width: 2px; height: 40px; }
+.jn.flow::after { background-image: linear-gradient(90deg, transparent 0 30%, var(--jc) 45% 55%, transparent 70%); background-size: 200% 100%; animation: jflow 1.4s linear infinite; }
+.jn.flow.to-l::after { animation-direction: reverse; }
+.jn.flow.to-d::after { background-image: linear-gradient(180deg, transparent 0 30%, var(--jc) 45% 55%, transparent 70%); background-size: 100% 200%; animation-name: jflowd; }
+@keyframes jflow { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@keyframes jflowd { from { background-position: 0 100%; } to { background-position: 0 -100%; } }
+@media (prefers-reduced-motion: reduce) { .jn.flow::after { animation: none; } }
+@media (max-width: 900px) {
+  .jgrid { grid-template-columns: minmax(0, 1fr); gap: 26px; }
+  .jn { grid-column: 1 !important; grid-row: auto !important; }
+  .jgrid .jn { order: var(--o, 0); }
+  .jn.to-r::after, .jn.to-l::after, .jn.to-d::after { content: ""; left: 50%; right: auto; top: auto; bottom: -27px; width: 2px; height: 26px; }
+  .jn.flow.to-r::after, .jn.flow.to-l::after, .jn.flow.to-d::after { background-image: linear-gradient(180deg, transparent 0 30%, var(--jc) 45% 55%, transparent 70%); background-size: 100% 200%; animation: jflowd 1.4s linear infinite; }
+}
 </style>
 </head>
 <body>
@@ -1048,9 +1130,13 @@ async function ensureCards(rows) {
 const byId = (rows) => Object.fromEntries((rows || []).map((r) => [r.id, r]));
 const LOADERS = {
   async overview() {
-    const [ov, open, log] = await Promise.all([api('/api/overview'), api('/api/tickets?filter=open&limit=1000'), api('/api/triggers?limit=40')]);
+    const [ov, open, log, asks] = await Promise.all([api('/api/overview'), api('/api/tickets?filter=open&limit=1000'), api('/api/triggers?limit=40'), api('/api/triggers?human=1&limit=30')]);
     await ensureCards(ov.needs_person || []);
-    return { ov, open, log };
+    /* 一条指令的旅程：选中的那条（默认最新一条）连同它的工单详情 */
+    const pick = (S.ui.journey && asks.find((t) => t.id === S.ui.journey)) || asks[0] || null;
+    const ref = pick && (pick.tickets || [])[0];
+    const tk = ref ? await api(`/api/tickets/${encodeURIComponent(ref.code || ref.id)}`).catch(() => null) : null;
+    return { ov, open, log, asks, pick, tk };
   },
   async sources() {
     const [sources, dropped] = await Promise.all([api('/api/sources'), api('/api/messages?status=dropped&limit=200')]);
@@ -1124,7 +1210,8 @@ const VIEWS = {};
 
 /* 运转图里各 Agent 的颜色；称号和职责写在 agents.yaml 的 title / duty。没列到的按顺序取色 */
 const AGENT_LOOK = { claude: 'var(--c-orange)', codex: 'var(--c-cyan)', antigravity: 'var(--c-purple)', workbuddy: 'var(--c-pink)', script: 'var(--c-green)' };
-const CHAIN_ROLES = { ...ROLES, ops: '排查', image: '看图', browser: '浏览器' };
+const CHAIN_ROLES = { ...ROLES, ops: '排查', image: '看图', browser: '浏览器', route: '研判路由' };
+const TUNE_ROLES = { route: '研判路由', decide: '拍方向', write: '撰写', classify: '分拣', review: '复核审查', dev: '开发', ops: '排障', browser: '浏览器', video: '看视频', image: '看图' };
 const LOOK_CYCLE = ['var(--c-blue)', 'var(--c-yellow)', 'var(--c-pink)', 'var(--c-purple)'];
 const SOURCE_COLOR = { schedule: 'var(--c-yellow)', pipeline: 'var(--c-cyan)', dingtalk: 'var(--c-blue)', lark: 'var(--c-green)', cli: 'var(--c-purple)' };
 function logLine(t) {
@@ -1135,7 +1222,102 @@ function logLine(t) {
     <span class="who" style="--lc:${t.human ? 'var(--c-orange)' : SOURCE_COLOR[src] || 'var(--c-cyan)'}">${esc(who)}</span>
     <span class="what">${esc(String(t.text || t.type || '').split('\n')[0])}${t.went ? ` <span class="${tone}">→ ${esc(t.went)}</span>` : ''}</span></div>`;
 }
-VIEWS.overview = ({ ov, open, log }) => {
+/* 一条指令的旅程：人说的一句话从进来到回到人手里，经过哪几站、每站产出什么数据、落在状态库哪张表、花了多久 */
+const ANSWER_RE = /^T\d+\s+(\d+|[a-z_]+)(\s|$)/, FOLLOW_RE = /^T\d+\s/;
+function askKind(t) {
+  const text = String(t.text || '').replace(/^@\S+\s*/, '');
+  if (ANSWER_RE.test(text)) return ['批红', 'var(--c-orange)'];
+  if (FOLLOW_RE.test(text) || (!t.decision_kind && (t.tickets || []).length)) return ['跟进', 'var(--c-cyan)'];
+  if (t.decision_kind === 'ignore') return ['没接', 'var(--faint)'];
+  return ['新请求', 'var(--c-purple)'];
+}
+function since(t0, at) {
+  const d = parseTime(at);
+  if (!t0 || !d) return '';
+  const s = Math.max(0, (d - t0) / 1000);
+  return s < 60 ? `+${s < 10 ? s.toFixed(1) : Math.round(s)}s` : s < 3600 ? `+${Math.floor(s / 60)}m${pad(Math.round(s % 60))}s` : `+${(s / 3600).toFixed(1)}h`;
+}
+function journeyStages(tr, tk) {
+  const t0 = parseTime(tr.at), out = [];
+  const isNew = !!(tk && tk.decision && (tk.decision.trigger_ids || []).includes(tr.id));
+  const near = (at) => { const d = parseTime(at); return d && t0 && d.getTime() >= t0.getTime() - 60000; };
+  const asg = tk ? (tk.assignments || []).filter((a) => isNew || near(a.created_at || a.started_at)) : [];
+  const runs = tk ? (tk.runs || []).filter((r) => asg.some((a) => a.id === r.assignment)) : [];
+  const msgs = tk ? (tk.messages || []).filter((m) => isNew || near(m.at)) : [];
+  const via = { mention: '@机器人', direct: '直接对 Agent 说', none: '没 @' }[tr.addressed] || '';
+  out.push({ title: '你发出', at: tr.at, main: `${sourceTitle(tr.source)}${via ? ' · ' + via : ''}`, body: tr.text, data: '原话 · 发送人 ID · 会话', state: 'done',
+    note: tr.source === 'lark' && /:00(\.000)?Z$/.test(tr.at || '') ? '飞书的消息时间只精确到分钟，后面的耗时会多算几十秒' : '' });
+  const th = (tr.threads || [])[0] || '', thKind = th.startsWith('ticket:') ? `工单 ${th.slice(7)} 自己的线程（带编号的话只到这张工单）` : th.includes('/') ? `${sourceTitle(th.split(':')[0])} · 这条消息自己的线程` : threadName(th);
+  out.push({ title: '来源收下 → 触发', at: null, main: thKind, tip: th, body: tr.filtered ? `被来源过滤：${tr.went || ''}` : '按会话归到线程，只存一次；线程上已有工单在跟就直接送过去',
+    data: '触发 {来源, 原话, 线程, 人发的}', table: 'trigger · trigger_thread', state: tr.filtered ? 'stop' : 'done' });
+  if (tr.filtered) return out;
+  if (tr.decision_kind) {
+    const dec = tk && tk.decision;
+    out.push({ title: '准入 → 研判', at: dec ? dec.at : null, main: `${DECISION_LABELS[tr.decision_kind] || tr.decision_kind}${dec && dec.strength ? ' · ' + (STRENGTH[dec.strength] || dec.strength) : ''}`,
+      body: String(tr.went || '').replace(/^(接单|忽略|停止|重开)：/, ''), data: '决定 {接单 / 忽略, 原因, 强度}', table: 'decision', state: tr.decision_kind === 'accept' ? 'done' : 'stop' });
+    if (tr.decision_kind !== 'accept' || !tk) {
+      out.push({ title: '结束', main: tr.decision_kind === 'ignore' ? '没开工单，只留底' : '没开新工单', body: '不会回话；决定和原因在“评估”页', state: 'end' });
+      return out;
+    }
+  } else if ((tr.tickets || []).length) {
+    out.push({ title: '直达已有工单', at: null, main: `送到 ${tr.tickets.map((x) => x.code).join(' ')}`, body: tr.went || '带编号的话、或线程上已有工单在跟：不再研判，作为输入送给它',
+      data: '工单输入 {原话, 来源}', table: 'ticket（输入）', state: 'done' });
+  }
+  if (!tk) return out;
+  out.push({ title: isNew ? '开工单' : '工单收到', at: isNew ? tk.created_at : null, main: `${tk.code} · ${tk.title || ''}`, body: tk.scope || '', href: Hticket(tk.code),
+    data: '授权 {范围, 强度, 依据, 策略版本}', table: 'ticket', state: 'done' });
+  const last = asg[asg.length - 1], working = last && !last.ended_at;
+  const runLine = runs.map((r) => `${r.agent}${r.model ? ' · ' + r.model : ''}${r.effort ? ' · ' + r.effort : ''}${r.is_fallback ? '（降级）' : ''} ${r.duration_s != null ? r.duration_s + 's' : '…'}${r.cost_usd ? ' · $' + Number(r.cost_usd).toFixed(2) : ''}${r.status && r.status !== 'ok' ? ' · ' + (RUN_STATUS[r.status] || r.status) : ''}`).join('；');
+  out.push({ title: '执行器 → Agent', at: last && last.started_at, main: runs.length ? runLine : tk.executor === 'script' ? '脚本' : last ? '排队等执行位 / Agent' : '还没派工',
+    body: tk.executor === 'script' ? '确定性脚本：不用大模型，按步骤办事' : '提示词 = 工单卡片 + Skill + 相关决定 + 上下文文件；同一张工单续接同一段会话',
+    data: '派工 → 运行 {Agent, 会话, 耗时, 费用}', table: 'ticket（派工）· run', state: !last ? 'wait' : working ? 'live' : 'done' });
+  const rep = last && last.report;
+  out.push({ title: '报告', at: rep && rep.at, main: rep ? (REPORT_STATE[rep.state] || rep.state) : '等这一轮跑完', body: rep ? rep.summary : '', data: '报告 JSON {state, summary, message, question, events}', table: 'ticket',
+    state: rep ? (['blocked', 'failed'].includes(rep.state) ? 'stop' : 'done') : working ? 'live' : 'wait' });
+  const sent = msgs.filter((m) => m.status === 'sent');
+  out.push({ title: '发件箱', at: (sent[0] || msgs[0] || {}).at, main: msgs.length ? msgs.map((m) => `${MSG_KIND[m.kind] || m.kind}${m.status !== 'sent' ? '（' + (MSG_STATUS[m.status] || m.status) + '）' : ''}`).join(' · ') : rep ? '这一轮不出声' : '—',
+    body: msgs.length ? '唯一找人的出口：静默时段、每天卡片上限、回到原会话' : rep ? '按规则的 tell：定时 / 业务事件起的工单只在要人拍板时出声' : '', data: '消息 {确认 / 结果 / 问题卡片}', table: 'outbox',
+    state: msgs.some((m) => m.status === 'pending') ? 'live' : msgs.length ? 'done' : rep ? 'end' : 'wait' });
+  const back = sent[sent.length - 1], q = tk.question;
+  out.push({ title: q ? '等你回答' : '回到你', at: back && back.at, main: back ? `${sourceTitle((back.channel || {}).source || tr.source)} · ${MSG_KIND[back.kind] || back.kind}` : q ? `${tk.code} 在等你拍板` : '—',
+    body: back ? back.text : q ? q : '', data: q ? `回「${tk.code} 1」→ 带批准凭据的事件 → 下一站` : '', state: back ? 'done' : q ? 'live' : 'wait', you: true });
+  return out;
+}
+function journeyHtml(asks, pick, tk) {
+  if (!asks.length) return '';
+  const chips = asks.slice(0, 14).map((t) => {
+    const [kl, kc] = askKind(t), on = pick && t.id === pick.id;
+    return `<button class="jask${on ? ' on' : ''}" data-act="journey-pick" data-id="${esc(t.id)}" style="--kc:${kc}" title="${esc(t.text || '')}">
+      <span class="jask-k">${kl}</span><span class="jask-t">${esc(String(t.text || '').replace(/\s+/g, ' ').slice(0, 26))}</span>
+      <span class="jask-m">${esc(sourceTitle(t.source))} · ${shortTime(parseTime(t.at) || new Date())}${(t.tickets || [])[0] ? ' · ' + esc(t.tickets[0].code) : ''}</span></button>`;
+  }).join('');
+  if (!pick) return '';
+  const st = journeyStages(pick, tk), t0 = parseTime(pick.at);
+  const STATE_C = { done: 'var(--c-cyan)', live: 'var(--c-orange)', stop: 'var(--bad)', end: 'var(--faint)', wait: 'var(--faint)' };
+  const node = (s, i) => {
+    const dir = st.length <= 4 ? 'r' : i < 3 ? 'r' : i === 3 ? 'd' : 'l';
+    const col = st.length <= 4 ? i + 1 : i < 4 ? i + 1 : 8 - i, row = st.length <= 4 || i < 4 ? 1 : 2;
+    const flowing = i < st.length - 1 && s.state !== 'wait' && s.state !== 'stop' && s.state !== 'end';
+    return `<div class="jn jn-${s.state}${s.you ? ' you' : ''}${i < st.length - 1 ? ' to-' + dir : ''}${flowing ? ' flow' : ''}" style="--jc:${STATE_C[s.state]};grid-column:${col};grid-row:${row}">
+      <div class="jn-h"><span class="jn-i">${i + 1}</span><b>${esc(s.title)}</b><span class="jn-t" title="${s.at ? esc(fullTime(parseTime(s.at))) : ''}">${s.at ? since(t0, s.at) || '' : ''}</span></div>
+      <div class="jn-m"${s.tip ? ` title="${esc(s.tip)}"` : ''}>${s.href ? `<a href="${s.href}">${esc(s.main)}</a>` : esc(s.main)}</div>
+      ${s.body ? `<div class="jn-b">${esc(s.body)}</div>` : ''}
+      ${s.note ? `<div class="jn-n">${esc(s.note)}</div>` : ''}
+      <div class="jn-f">${s.data ? `<span>${esc(s.data)}</span>` : ''}${s.table ? `<code>${esc(s.table)}</code>` : ''}</div></div>`;
+  };
+  const backMsg = tk && (tk.messages || []).filter((m) => m.status === 'sent' && parseTime(m.at) >= t0).slice(-1)[0];
+  const runs = tk ? (tk.runs || []).filter((r) => parseTime(r.started_at) >= new Date(t0 - 60000)) : [];
+  const total = backMsg ? since(t0, backMsg.at).replace('+', '') : '';
+  const agentS = runs.reduce((a, r) => a + (Number(r.duration_s) || 0), 0), cost = runs.reduce((a, r) => a + (Number(r.cost_usd) || 0), 0);
+  const live = st.some((s) => s.state === 'live');
+  const sum = [total && `发出到收到回复 <b>${total}</b>`, agentS && `Agent 跑了 <b>${+agentS.toFixed(1)}s</b>`, cost && `<b>$${cost.toFixed(2)}</b>`, live && '<span class="jlive">● 正在进行</span>'].filter(Boolean).join(' · ');
+  return `<section class="sec journey"><h2>一条指令的旅程<span class="hint">你说的一句话从进来到回到你手里经过的每一站：这一站产出什么数据、落在状态库哪张表、离发出过了多久。默认跟着最新一条走</span>
+      ${S.ui.journey ? '<button class="btn small" style="margin-left:auto" data-act="journey-pick" data-id="">跟最新 ↻</button>' : ''}</h2>
+    <div class="jasks">${chips}</div>
+    <div class="jbox"><div class="jsum">${sum || '<span class="faint">这条还没有回音</span>'}</div>
+      <div class="jgrid${st.length <= 4 ? ' short' : ''}">${st.map(node).join('')}</div></div></section>`;
+}
+VIEWS.overview = ({ ov, open, log, asks, pick, tk }) => {
   const person = ov.needs_person || [];
   const codes = byId(open);
   /* 问题只列可以处理的：evals 这条健康项和“研判没有完成”是同一件事，effect:* 和“连续失败”也是，不重复列 */
@@ -1219,11 +1401,16 @@ VIEWS.overview = ({ ov, open, log }) => {
     const rules = (a.rules || []).filter((r) => r.enabled), backup = (a.backup || []).map((r) => CHAIN_ROLES[r] || r);
     const ruleTip = rules.map((r) => r.name).join('、');
     const foot = [rules.length ? `主跑 <b>${rules.length}</b> 条规则` : '', backup.length ? `兜底 ${esc(backup.join(' '))}` : ''].filter(Boolean).join(' · ');
+    /* 模型和思考强度：同一个模型 + 强度的角色并成一行，如“fable · high：拍方向 开发” */
+    const tuned = {};
+    Object.entries(a.models || {}).forEach(([role, t]) => { const k = [t.model || 'CLI 默认', t.effort].filter(Boolean).join(' · '); (tuned[k] = tuned[k] || []).push(TUNE_ROLES[role] || role); });
+    const tuneHtml = Object.keys(tuned).length ? `<div class="agent-t">${Object.entries(tuned).map(([k, roles]) => `<div title="${esc(k)}：${esc(roles.join('、'))}"><code>${esc(k)}</code><span>${esc(roles.join(' '))}</span></div>`).join('')}</div>`
+      : a.default_model || a.default_effort ? `<div class="agent-t"><div><code>${esc([a.default_model, a.default_effort].filter(Boolean).join(' · '))}</code><span>全部</span></div></div>` : '';
     return `<div class="agent${a.busy ? ' busy' : ''}${down ? ' down' : ''}" style="--ac:${color}" title="${esc(name)}${a.title ? '（' + esc(a.title) + '）' : ''}：并发 ${a.concurrency || 0}${why ? '，' + esc(why) : ''}${ruleTip ? '\n主跑：' + esc(ruleTip) : ''}">
       <div class="agent-h"><span class="ai"></span><span class="nm">${esc(name)}</span>${a.title ? `<span class="ttl">${esc(a.title)}</span>` : ''}<span class="st ${st}"></span></div>
       <div class="agent-v"><b>${a.busy || 0}</b><small>/ ${a.concurrency || 0} 在跑</small></div>
       ${why ? `<div class="agent-m bad">${esc(why)}</div>` : ''}
-      <div class="agent-d">${esc(a.duty || '待命')}</div>
+      <div class="agent-d">${esc(a.duty || '待命')}</div>${tuneHtml}
       ${foot ? `<div class="agent-r">${foot}</div>` : ''}</div>`;
   };
   const credit = ov.counters && ov.counters.budget ? ` · 今日积分 ${num(ov.counters.popto_credits || 0)}/${num(ov.counters.budget)}` : '';
@@ -1249,7 +1436,7 @@ VIEWS.overview = ({ ov, open, log }) => {
   const term = `<section class="sec"><div class="term"><div class="term-h"><i></i><i></i><i></i>company.log — 最近的触发和去向<span class="tail">● tail -f</span></div>
     <div class="term-b">${(log || []).map(logLine).join('') || '<div class="log"><span class="what">还没有触发</span></div>'}<span class="caret"></span></div></div></section>`;
 
-  return `${paused}${hero}${org}
+  return `${paused}${hero}${org}${journeyHtml(asks || [], pick, tk)}
   ${problems.length ? `<section class="sec"><h2>系统问题 <span class="cnt">${problems.length}</span></h2><div class="list">${problems.map(problemRow).join('')}</div></section>` : ''}
   ${sick.length ? `<section class="sec"><h2>Agent 异常 <span class="cnt">${sick.length}</span></h2><div class="list">${sick.map(agentRow).join('')}</div></section>` : ''}
   <div class="ov-grid">${todo}${term}</div>
@@ -1403,7 +1590,7 @@ VIEWS.ticket = ({ page: p }) => {
     ${a.ended_reason ? `<span class="muted">${esc(ENDED_REASON[a.ended_reason] || a.ended_reason)}</span>` : ''}</div>
     ${a.report ? `<div class="row-sub">${chip('报告：' + (REPORT_STATE[a.report.state] || a.report.state), REPORT_TONE[a.report.state])} ${T(a.report.at)}</div><div class="row-text clamp">${esc(a.report.summary)}</div>` : '<div class="row-sub faint">还没有报告</div>'}</div>
     <div class="row-meta">${a.started_at ? '开始 ' + T(a.started_at) : '创建 ' + T(a.created_at)}${a.ended_at ? '<br>结束 ' + T(a.ended_at) : ''}</div></div>`).join('');
-  const runs = (p.runs || []).map((x) => `<div class="row"><div class="row-main"><div class="row-head"><b>${esc(x.agent)}</b><span class="muted">${esc(ROLES[x.role] || x.role || '')}</span>${x.is_fallback ? chip('降级', 'warn', '主 Agent 不可用或太忙，由降级链上的下一个接手') : ''}
+  const runs = (p.runs || []).map((x) => `<div class="row"><div class="row-main"><div class="row-head"><b>${esc(x.agent)}</b>${x.model || x.effort ? `<span class="mchip" style="--mc:var(--c-purple)" title="这一轮实际用的模型和思考强度">${esc([x.model, x.effort].filter(Boolean).join(' · '))}</span>` : ''}<span class="muted">${esc(ROLES[x.role] || x.role || '')}</span>${x.is_fallback ? chip('降级', 'warn', '主 Agent 不可用或太忙，由降级链上的下一个接手') : ''}
     ${chip(RUN_STATUS[x.status] || x.status, x.status === 'ok' ? 'plain' : 'bad')}<span class="muted num">${x.duration_s == null ? '' : `${x.duration_s} 秒`}</span>${x.cost_usd ? `<span class="muted num">$${Number(x.cost_usd).toFixed(2)}</span>` : ''}</div>
     ${x.error_detail ? `<pre class="text err">${esc(x.error_detail)}</pre>` : ''}</div><div class="row-meta">${T(x.started_at)}</div></div>`).join('');
   const messages = (p.messages || []).map((m) => `<div class="row"><div class="row-main"><div class="row-head">${chip(MSG_KIND[m.kind] || m.kind, 'line')}${chip(MSG_STATUS[m.status] || m.status, m.status === 'sent' ? 'plain' : m.status === 'pending' ? 'warn' : m.reason === 'withdrawn' ? 'plain' : 'bad')}
@@ -1491,17 +1678,28 @@ VIEWS.settings = (d) => {
   <section class="sec"><h2>变更历史 <span class="cnt">${(st.history || []).length}</span><span class="hint">策略版本每变一次记一条</span></h2>${history ? `<div class="list">${history}</div>` : '<div class="quiet">启动以来策略没有变过</div>'}</section>`;
 };
 
-/* 需求与开发：需求池按“待评估 → 观察 → 批准 → PRD 评审 → 开发中 → 完成”流转；分数 = 信号 × 价值系数 ÷ 成本 */
+/* 需求与开发：需求池按“待评估 → 观察 → 批准 → PRD 评审 → 开发中 → 完成”流转；分数 = 信号 × 价值系数 ÷ 成本。
+   人在这里做的决定：批准开发（= 周报卡片上的“按建议做”，开一张写 PRD → 开发的工单）、观察、搁置（写原因）、恢复；提新需求 */
 const DEMAND_STAGES = [['open', '待评估', 'var(--c-blue)'], ['watching', '观察中', 'var(--c-yellow)'], ['approved', '已批准', 'var(--c-purple)'],
   ['prd_review', 'PRD 评审', 'var(--c-pink)'], ['in_dev', '开发中', 'var(--c-cyan)'], ['done', '已完成', 'var(--c-green)']];
-const DEMAND_GROUPS = { all: () => true, todo: (x) => ['open', 'watching'].includes(x.status || 'open'), doing: (x) => ['approved', 'prd_review', 'in_dev'].includes(x.status), done: (x) => x.status === 'done' };
+const DEMAND_GROUPS = { all: (x) => x.status !== 'shelved', todo: (x) => ['open', 'watching'].includes(x.status || 'open'), doing: (x) => ['approved', 'prd_review', 'in_dev'].includes(x.status),
+  done: (x) => x.status === 'done', shelved: (x) => x.status === 'shelved' };
 const COST = { S: ['小', 'var(--c-green)'], M: ['中', 'var(--c-yellow)'], L: ['大', 'var(--c-orange)'] };
+const SCORE_TIERS = [['hi', '高分 ≥2', (v) => v >= 2], ['mid', '中 1–2', (v) => v >= 1 && v < 2], ['lo', '低 <1', (v) => v < 1]];
 function hbars(items, colors) {
   const max = Math.max(1, ...(items || []).map((i) => i.n || 0));
   return (items || []).map((i, k) => `<div class="hbar"><span class="hbar-l" title="${esc(bl(i.label))}">${esc(bl(i.label))}</span><span class="hbar-t"><i style="width:${Math.max(2, Math.round((i.n || 0) / max * 100))}%;--bc:${colors[k % colors.length]}"></i></span><b>${num(i.n)}</b></div>`).join('') || '<div class="faint">没有数据</div>';
 }
+/* 原话里的网址缩成“小红书 ↗”这样的小链接 */
+const LINK_SITE = [[/xiaohongshu\.com|xhslink/, '小红书'], [/douyin\.com|iesdouyin/, '抖音'], [/channels\.weixin|weixin\.qq/, '视频号'], [/bilibili\.com|b23\.tv/, 'B站'], [/kuaishou\.com/, '快手'], [/zhihu\.com/, '知乎']];
+function quoteHtml(text) {
+  return esc(text).replace(/[(（]?\s*(https?:\/\/[^\s)）」"<，,；;]+)\s*[)）]?/g, (m, url) => {
+    const site = (LINK_SITE.find(([re]) => re.test(url)) || [null, '链接'])[1];
+    return `<a class="qlink" href="${url}" target="_blank" rel="noopener" title="${url}">${site} ↗</a>`;
+  }).replace(/…$/, '<span class="faint">…</span>');
+}
 function demandPage(d, r, days) {
-  const all = d.demands || [], sg = d.signals || {}, recent = sg.recent || [];
+  const all = d.demands || [], sg = d.signals || {}, recent = sg.recent || [], un = sg.unassigned_recent || [];
   const count = Object.fromEntries((d.status || []).map((x) => [x.label, x.n]));
   const g = DEMAND_GROUPS[r.q.ds] ? r.q.ds : 'all';
   const rows = all.filter(DEMAND_GROUPS[g]);
@@ -1509,59 +1707,84 @@ function demandPage(d, r, days) {
   const kpi = (v, label, color, hot) => `<div class="kpi${hot ? ' hot' : ''}" style="--kc:${color}"><b>${v}</b><small>${label}</small></div>`;
   const kpis = `<div class="kpis">${[
     kpi(num(d.total), '需求池', 'var(--c-cyan)'),
-    kpi(num((count.open || 0) + (count.watching || 0)), '待评估 / 观察', 'var(--c-blue)'),
+    kpi(num((count.open || 0) + (count.watching || 0)), '待评估 / 观察', 'var(--c-blue)', (count.open || 0) > 0),
     kpi(num(doing), '批准到开发中', 'var(--c-purple)'),
     kpi(num(count.done || 0), '已完成', 'var(--c-green)'),
     kpi(num(sg.total), '需求信号', 'var(--c-yellow)'),
     kpi(num(sg.unassigned), '信号没归到需求', 'var(--c-orange)', sg.unassigned > 0),
   ].join('')}</div>`;
-  /* 流转条：每个阶段一段，宽度按数量，0 的阶段也留一格 */
   const flow = `<div class="dflow">${DEMAND_STAGES.map(([k, label, c], i) => `<div class="dflow-s${count[k] ? '' : ' zero'}" style="--fc:${c}">
-      <b>${num(count[k] || 0)}</b><span>${label}</span></div>${i < DEMAND_STAGES.length - 1 ? '<i class="dflow-a">›</i>' : ''}`).join('')}</div>`;
+      <b>${num(count[k] || 0)}</b><span>${label}</span></div>${i < DEMAND_STAGES.length - 1 ? '<i class="dflow-a">›</i>' : ''}`).join('')}
+    ${count.shelved ? `<i class="dflow-a">·</i><div class="dflow-s" style="--fc:var(--faint)"><b>${num(count.shelved)}</b><span>已搁置</span></div>` : ''}</div>`;
+  const head = `<section class="sec"><h2>需求与开发<span class="hint">需求来自评论、社媒监听和需求挖掘；你批准后 Claude 先写 PRD 请你批，批了才在独立分支开发、提 MR</span>
+    <button class="btn primary" style="margin-left:auto" data-act="dm-add">提需求…</button></h2>${kpis}${flow}</section>`;
+
+  /* 优先级矩阵：还没批的需求，按分数 × 成本放格子；高分又便宜的先做 */
+  const pending = all.filter(DEMAND_GROUPS.todo);
+  const cell = (tier, cost) => pending.filter((x) => tier[2](Number(x.score) || 0) && (x.cost_size || 'M') === cost);
+  const matrix = pending.length ? `<section class="sec"><h2>优先级矩阵 <span class="cnt">${pending.length}</span><span class="hint">待评估和观察中的需求：越靠左上越值得先做（分数高、成本小）。点标题跳到卡片</span></h2>
+    <div class="pmx"><div class="pmx-c pmx-h"></div>${Object.entries(COST).map(([k, [l, c]]) => `<div class="pmx-c pmx-h" style="color:${c}">成本 ${l}</div>`).join('')}
+    ${SCORE_TIERS.map((t) => `<div class="pmx-c pmx-r">${t[1]}</div>${Object.keys(COST).map((cost) => {
+      const xs = cell(t, cost), best = t[0] === 'hi' && cost === 'S';
+      return `<div class="pmx-c pmx-x${xs.length ? '' : ' zero'}${best ? ' best' : ''}">${best ? '<span class="pmx-tip">先做</span>' : ''}${xs.map((x) => `<button class="pmx-i" data-act="dm-focus" data-id="${esc(x.id)}" title="${esc(x.title)}"><b>${+Number(x.score || 0).toFixed(2)}</b>${esc(x.title)}</button>`).join('') || '<span class="faint">—</span>'}</div>`;
+    }).join('')}`).join('')}</div></section>` : '';
+
   const quotesOf = (id) => recent.filter((x) => x.demand_id === id);
   const stageIdx = (st) => Math.max(0, DEMAND_STAGES.findIndex(([k]) => k === (st || 'open')));
   const scoreTone = (v) => (v >= 2 ? 'hi' : v >= 1 ? 'mid' : 'lo');
   const card = (x) => {
-    const idx = stageIdx(x.status), [costLabel, costColor] = COST[x.cost_size] || [x.cost_size || '?', 'var(--faint)'];
+    const st = x.status || 'open', shelved = st === 'shelved', idx = stageIdx(st), [costLabel, costColor] = COST[x.cost_size] || [x.cost_size || '?', 'var(--faint)'];
     const quotes = quotesOf(x.id);
     const mr = (x.mr_links || []).map((m) => { const n = (/merge_requests\/(\d+)/.exec(m) || [])[1]; return `<a class="dm-link" href="${esc(m)}" target="_blank" rel="noopener" title="${esc(m)}">MR ${n ? '!' + n : ''}</a>`; }).join('');
-    return `<article class="dm${x.status === 'done' ? ' done' : ''}">
+    const acts = ['open', 'watching'].includes(st) ? `<button class="btn small primary" data-act="dm-approve" data-id="${esc(x.id)}" data-title="${esc(x.title)}">批准开发…</button>
+        ${st === 'open' ? `<button class="btn small" data-act="dm-set" data-op="watch" data-id="${esc(x.id)}" title="先不定，等更多信号">观察</button>` : `<button class="btn small" data-act="dm-set" data-op="reopen" data-id="${esc(x.id)}">回到待评估</button>`}
+        <button class="btn small ghost" data-act="dm-shelve" data-id="${esc(x.id)}" data-title="${esc(x.title)}">搁置…</button>`
+      : shelved ? `<button class="btn small" data-act="dm-set" data-op="reopen" data-id="${esc(x.id)}">恢复到待评估</button>` : '';
+    return `<article class="dm${st === 'done' ? ' done' : ''}${shelved ? ' shelved' : ''}" id="dm-${esc(x.id)}">
       <div class="dm-score ${scoreTone(Number(x.score) || 0)}" title="分数 = 信号 ${x.signal_count || 0} × 价值系数 ${x.value_factor ?? '—'} ÷ 成本（${esc(x.cost_size || '—')}）"><b>${+Number(x.score || 0).toFixed(2)}</b><small>分</small></div>
       <div class="dm-main">
-        <div class="dm-title">${esc(x.title)}</div>
+        <div class="dm-title">${x.is_test ? '<span class="tag line">测试</span> ' : ''}${esc(String(x.title || '').replace(/^【测试】/, ''))}</div>
         <div class="dm-tags"><span class="tag">${esc(bl(x.kind) || '—')}</span>${x.module ? `<span class="tag line">${esc(x.module)}</span>` : ''}
           <span class="tag line" title="开发成本">成本 <b style="color:${costColor}">${esc(costLabel)}</b></span><span class="tag line" title="价值系数">价值 ×${esc(x.value_factor ?? '—')}</span>
           <span class="tag line" title="归到这条需求的信号数">信号 <b>${num(x.signal_count)}</b></span></div>
         ${Object.keys(x.persona_dist || {}).length ? `<div class="dm-who">${Object.entries(x.persona_dist).map(([k, v]) => `<span>${esc(k)}${v > 1 ? ` ×${v}` : ''}</span>`).join('')}</div>` : ''}
-        ${quotes.length ? `<details class="inline dm-q" data-k="dmq:${esc(x.id)}"${S.ui.open['dmq:' + x.id] ? ' open' : ''}><summary>相关原话 ${quotes.length}</summary><div>${quotes.map((q) => `<blockquote>${esc(q.quote)}<span>${T(q.created_at)} · ${esc(bl(q.source_type))}</span></blockquote>`).join('')}</div></details>` : ''}
+        ${quotes.length ? `<blockquote class="dm-q1"><div>${quoteHtml(quotes[0].quote)}</div></blockquote>` : ''}
+        ${quotes.length > 1 ? `<details class="inline dm-q" data-k="dmq:${esc(x.id)}"${S.ui.open['dmq:' + x.id] ? ' open' : ''}><summary>另外 ${quotes.length - 1} 条原话</summary><div>${quotes.slice(1).map((q) => `<blockquote>${quoteHtml(q.quote)}<span>${T(q.created_at)} · ${esc(bl(q.source_type))}</span></blockquote>`).join('')}</div></details>` : ''}
+        ${shelved ? `<div class="pnote">已搁置${x.shelved_reason ? '：' + esc(x.shelved_reason) : ''}</div>` : ''}
+        ${acts ? `<div class="dm-acts">${acts}</div>` : ''}
       </div>
       <div class="dm-side">
-        <div class="steps" title="${esc(DEMAND_STAGES[idx][1])}">${DEMAND_STAGES.map(([k, , c], i) => `<i class="${i < idx ? 'st-past' : i === idx ? 'st-cur' : ''}" style="--sc:${c}"></i>`).join('')}</div>
-        <div class="dm-stage" style="color:${DEMAND_STAGES[idx][2]}">${esc(bl(x.status) || '待评估')}</div>
-        <div class="dm-links">${x.has_prd ? '<span class="dm-link">PRD</span>' : ''}${mr}</div>
+        ${shelved ? '<div class="dm-stage" style="color:var(--faint)">已搁置</div>' : `<div class="steps" title="${esc(DEMAND_STAGES[idx][1])}">${DEMAND_STAGES.map(([k, , c], i) => `<i class="${i < idx ? 'st-past' : i === idx ? 'st-cur' : ''}" style="--sc:${c}"></i>`).join('')}</div>
+        <div class="dm-stage" style="color:${DEMAND_STAGES[idx][2]}">${esc(DEMAND_STAGES[idx][1])}</div>`}
+        <div class="dm-links">${x.task ? `<a class="dm-link tk" href="${Hticket(x.task)}" title="开发工单">工单</a>` : ''}${x.has_prd ? '<span class="dm-link">PRD</span>' : ''}${mr}</div>
         <div class="dm-time">${T(x.updated_at)}</div>
       </div></article>`;
   };
-  const tabsHtml = [['all', '全部', all.length], ['todo', '待评估', all.filter(DEMAND_GROUPS.todo).length], ['doing', '推进中', all.filter(DEMAND_GROUPS.doing).length], ['done', '已完成', all.filter(DEMAND_GROUPS.done).length]]
-    .map(([k, label, n]) => `<a class="fchip${k === g ? ' on' : ''}" href="${H('business', { tab: 'demand', days, ds: k })}">${label}<b class="num">${n}</b></a>`).join('');
+  const tabsHtml = [['all', '全部', all.filter(DEMAND_GROUPS.all).length], ['todo', '待评估', pending.length], ['doing', '推进中', all.filter(DEMAND_GROUPS.doing).length],
+    ['done', '已完成', all.filter(DEMAND_GROUPS.done).length], ['shelved', '已搁置', all.filter(DEMAND_GROUPS.shelved).length]]
+    .filter(([k, , n]) => k !== 'shelved' || n).map(([k, label, n]) => `<a class="fchip${k === g ? ' on' : ''}" href="${H('business', { tab: 'demand', days, ds: k })}">${label}<b class="num">${n}</b></a>`).join('');
   const pool = `<section class="sec"><h2>需求池 <span class="cnt">${rows.length}</span><span class="hint">按分数排；分数 = 信号数 × 价值系数 ÷ 成本，鼠标放在分数上看拆解</span></h2>
     <div class="filters">${tabsHtml}</div>${rows.length ? `<div class="dms">${rows.map(card).join('')}</div>` : '<div class="quiet">这一类没有需求</div>'}</section>`;
   const SRC_C = ['var(--c-cyan)', 'var(--c-purple)', 'var(--c-green)', 'var(--c-yellow)'], KIND_C = ['var(--c-orange)', 'var(--c-pink)', 'var(--c-blue)', 'var(--c-yellow)', 'var(--c-green)', 'var(--c-purple)'];
   const signals = `<section class="sec"><h2>需求信号 <span class="cnt">${num(sg.total)}</span><span class="hint">评论、社媒监听和需求挖掘里抽出来的用户原话</span></h2>
-    <div class="dgrid"><div class="panel"><div class="ptitle-s">来源</div>${hbars(sg.source, SRC_C)}
+    <div class="dgrid3"><div class="panel"><div class="ptitle-s">来源</div>${hbars(sg.source, SRC_C)}
         <div class="unassigned${sg.unassigned ? ' hot' : ''}"><b>${num(sg.unassigned)}</b> 条信号还没归到任何需求${sg.unassigned ? '，下一轮需求挖掘会归并或新建' : ''}</div></div>
-      <div class="panel"><div class="ptitle-s">类型</div>${hbars(sg.kind, KIND_C)}</div></div></section>`;
+      <div class="panel"><div class="ptitle-s">类型（按大类）</div>${hbars(sg.kind_group || sg.kind, KIND_C)}</div>
+      <div class="panel"><div class="ptitle-s">产品模块</div>${hbars(sg.module, ['var(--c-blue)', 'var(--c-pink)', 'var(--c-yellow)', 'var(--c-green)', 'var(--c-purple)', 'var(--c-cyan)'])}</div></div></section>`;
   const byId = Object.fromEntries(all.map((x) => [x.id, x]));
   const quoteRow = (q) => {
     const dm = q.demand_id && byId[q.demand_id];
     return `<div class="sig"><div class="sig-dot" style="--ic:${q.intensity >= 3 ? 'var(--c-orange)' : q.intensity >= 2 ? 'var(--c-yellow)' : 'var(--c-cyan)'}"></div>
-      <div class="sig-main"><div class="sig-q">${esc(q.quote)}</div>
+      <div class="sig-main"><div class="sig-q">${quoteHtml(q.quote)}</div>
         <div class="sig-meta">${T(q.created_at)}<span>${esc(bl(q.source_type))}</span><span>${esc(bl(q.kind))}</span>${q.module ? `<span>${esc(q.module)}</span>` : ''}${q.persona ? `<span>${esc(q.persona)}</span>` : ''}
           <span title="强度">强度 ${'●'.repeat(Math.min(5, q.intensity || 0))}${'○'.repeat(Math.max(0, 3 - (q.intensity || 0)))}</span></div>
-        <div class="sig-to">${dm ? `→ 归入「${esc(dm.title)}」` : '<span class="warnc">→ 还没归到需求</span>'}</div></div></div>`;
+        <div class="sig-to">${dm ? `→ 归入<button class="tlink" data-act="dm-focus" data-id="${esc(dm.id)}">「${esc(dm.title)}」</button>` : '<span class="warnc">→ 还没归到需求</span>'}</div></div></div>`;
   };
-  const timeline = `<section class="sec"><h2>最近的原话 <span class="cnt">${recent.length}</span></h2>${recent.length ? `<div class="list sigs">${recent.map(quoteRow).join('')}</div>` : '<div class="quiet">没有信号</div>'}</section>`;
-  return `<section class="sec">${kpis}${flow}</section>${pool}${signals}${timeline}`;
+  const sq = r.q.sq === 'un' ? 'un' : 'all', qs = sq === 'un' ? un : recent;
+  const qtabs = [['all', '最近', recent.length], ['un', '没归到需求', sg.unassigned || 0]].map(([k, label, n]) => `<a class="fchip${k === sq ? ' on' : ''}" href="${H('business', { tab: 'demand', days, ds: r.q.ds, sq: k })}">${label}<b class="num">${n}</b></a>`).join('');
+  const timeline = `<section class="sec"><h2>用户原话<span class="hint">${sq === 'un' ? '强度高的在前；下一轮需求挖掘会把它们归进已有需求或新建，觉得哪条该单独成需求，可以点上面的“提需求…”' : '按时间倒序'}</span></h2>
+    <div class="filters">${qtabs}</div>${qs.length ? `<div class="list sigs">${qs.map(quoteRow).join('')}</div>` : '<div class="quiet">没有信号</div>'}</section>`;
+  return `${head}${matrix}${pool}${signals}${timeline}`;
 }
 /* ───────── 内容：发布中心 / 内容日历 / 账号 ─────────
    发布包是 Agent 按平台写好的（标题、正文、话题、封面、视频）。两条路：
@@ -2328,6 +2551,31 @@ const ACTIONS = {
     if (ok) act(b, () => post('/api/skills', { action: 'restore', name: b.dataset.name, version: b.dataset.v, origin: 'panel' }), '已恢复，下一轮生效');
   },
   'collect-post': (b) => act(b, () => post('/api/metrics/collect', { post_ids: [b.dataset.id], origin: 'panel' }), `已开始采集「${b.dataset.title}」，稍后刷新看结果`),
+  async 'dm-add'(b) {
+    const ok = await ask({ title: '提一条需求', ok: '提交', body: '<p>交给需求挖掘：归进已有的相近需求（加一条信号），或新建一条进需求池，几分钟后出现在这里。和命令行 <span class="mono">superops demand "……"</span> 一样。</p>',
+      input: { label: '需求', placeholder: '例如：批量口播能不能一次选多个数字人' } });
+    if (ok && ok.value) act(b, () => post('/api/demands', { action: 'add', text: ok.value }), '已提交，需求挖掘归并后出现在需求池');
+  },
+  async 'dm-approve'(b) {
+    const ok = await ask({ title: `批准开发「${b.dataset.title}」？`, ok: '批准开发',
+      body: '<p>等于在周报卡片上选了“按建议做”：开一张“需求 → PRD → 开发”工单。</p><p>Claude 先写 PRD 发给你批；<b>PRD 批了才开始写代码</b>，在独立分支开发、提 MR，审查和合并都要人来。不会直接推主干。</p>' });
+    if (ok) act(b, () => post('/api/demands', { action: 'approve', id: b.dataset.id, confirm: true }), '已批准，PRD 写好后在工单里批');
+  },
+  'dm-set': (b) => act(b, () => post('/api/demands', { action: b.dataset.op, id: b.dataset.id }), b.dataset.op === 'watch' ? '已改为观察中' : '已回到待评估'),
+  async 'dm-shelve'(b) {
+    const ok = await ask({ title: `搁置「${b.dataset.title}」？`, ok: '搁置', body: '<p>先不做，留在需求池的“已搁置”里，随时能恢复。新的信号仍会归到它上面。</p>',
+      input: { label: '原因', placeholder: '例如：成本太高，等批量口播改版后再看' } });
+    if (!ok) return;
+    if (!ok.value) { toast('搁置要写一句原因', 'bad'); return; }
+    act(b, () => post('/api/demands', { action: 'shelve', id: b.dataset.id, reason: ok.value }), '已搁置');
+  },
+  'dm-focus': (b) => {
+    const el = document.getElementById('dm-' + b.dataset.id);
+    if (!el) { toast('这条需求不在当前筛选里'); return; }
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600);
+  },
+  'journey-pick': (b) => { S.ui.journey = b.dataset.id || null; load(); },
   async 'term-add'(b) {
     const ok = await ask({ title: '添加监听意图词', ok: '添加', body: '<p>下一次社媒监听（每天 14:00）开始按这个词去各平台搜近 24 小时的内容。删掉过的词再加一次就恢复。</p>',
       input: { label: '词', placeholder: '例如：保险团队长怎么带新人' }, select: { label: '类别', options: Object.entries(TERM_CAT) } });

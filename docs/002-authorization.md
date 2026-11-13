@@ -86,7 +86,7 @@ policy:
 | `id`、`name`、`enabled` | 标识、给人看的名字、开关 |
 | `instruction` | 这条规则允许做什么，用人话写。它成为工单的范围，也原样给执行器 |
 | `when` | `{origin, types, match}`：事件来源、事件类型（可用通配符）、对“对象 + 摘要”的正则。写了它，规则由事件直接命中；不写就是语义规则 |
-| `run` | 怎么执行：`executor: agent`（默认）时有 `role`、`agent`、`skill`、`tools`、`effort`、`timeout`、`context`、`worktree`；`executor: script` 时有 `command`、`timeout`；`executor: none` 只留底 |
+| `run` | 怎么执行：`executor: agent`（默认）时有 `role`、`agent`、`skill`、`tools`、`effort`、`model`（不写就按 agents.yaml 里这个 Agent 在这个角色上的配置，见 003）、`timeout`、`context`、`worktree`；`executor: script` 时有 `command`、`timeout`；`executor: none` 只留底 |
 | `requires_approval` | 这类事件只能来自人选中的卡片选项 |
 | `tell` | `never` 不出声 · `needed` 只在要人拍板时 · `always` 结果也发给人 · `digest`（默认）进日报。对按规则开出的工单起作用（包括人批准的事件开出的）；人直接提的请求总会回话 |
 | `priority` | 0–3；0 是 P0，不受静默时段和卡片上限限制 |

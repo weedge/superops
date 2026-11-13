@@ -161,6 +161,55 @@ def publish_overview(rt) -> dict:
     return {"accounts": desk.accounts(), "jobs": desk.job_list(), "packs": packs}
 
 
+
+DEMAND_OPEN = ("open", "watching", "shelved")     # 还没批准的需求：可以批准、观察、搁置、恢复
+
+
+def demands_action(rt, body: dict) -> dict:
+    """需求池上人的决定。approve：等于在周报卡片上选了“按建议做”——发出带人工批准凭据的 demand.approved，
+    开一张“需求 → PRD → 开发”工单（先写 PRD 请人批，批了才开发）；watch / shelve / reopen：只改需求池里的状态；
+    add：提一条新需求（同 superops demand "……"），由需求挖掘归并或新建。"""
+    from ..biz import db as bizdb
+    from ..core.model import now_iso
+    action, by = str(body.get("action") or ""), str(body.get("by") or "panel")
+    if action == "add":
+        text = str(body.get("text") or "").strip()
+        if not text:
+            raise ApiError(400, "要写需求内容")
+        return rt.pipeline.emit({"source": "panel", "type": "demand.manual", "subject": "demand:manual", "summary": text[:300],
+                                 "data": {"text": text[:4000], "by": by}})
+    did = str(body.get("id") or "")
+    ops = bizdb.open_ops()
+    try:
+        row = ops.execute("SELECT id, title, COALESCE(status, 'open') AS status FROM demands WHERE id=?", (did,)).fetchone()
+        if not row:
+            raise ApiError(404, f"没有需求 {did}")
+        title, status, at = row["title"], row["status"], now_iso()
+        if action in ("approve", "watch", "shelve", "reopen") and status not in DEMAND_OPEN:
+            raise ApiError(409, f"这条需求现在是「{status}」，已经批准过了")
+        if action == "approve":
+            if body.get("confirm") is not True:
+                raise ApiError(400, "批准开发要在面板上确认一次（confirm: true）")
+            approved = {"by": by, "at": at, "option": "approve", "label": "面板批准开发", "via": "panel"}
+            out = rt.pipeline.emit({"source": "panel", "type": "demand.approved", "subject": f"demand:{did}", "summary": f"面板批准开发：{title}"[:300],
+                                    "data": {"demand_id": did, "title": title, "by": by, "via": "panel"},
+                                    "dedup_key": f"panel-demand:{did}:{at}"}, approved=approved)
+            ops.execute("UPDATE demands SET status='approved', decided_ref=?, updated_at=? WHERE id=?", (f"panel:{by}:{at}", at, did))
+            ops.commit()
+            return {"ok": True, "id": did, "status": "approved", "routed": out}
+        new = {"watch": "watching", "shelve": "shelved", "reopen": "open"}.get(action)
+        if not new:
+            raise ApiError(400, f"不认识的动作 {action}")
+        reason = str(body.get("reason") or "").strip()
+        if action == "shelve" and not reason:
+            raise ApiError(400, "搁置要写一句原因")
+        ref = f"panel:{by}:{at}" + (f"：{reason[:300]}" if reason else "")
+        ops.execute("UPDATE demands SET status=?, decided_ref=?, updated_at=? WHERE id=?", (new, ref, at, did))
+        ops.commit()
+        return {"ok": True, "id": did, "status": new}
+    finally:
+        ops.close()
+
 def publish_packs_action(rt, body: dict) -> dict:
     """approve：等于在群里批了发布卡片——发出带人工批准凭据的 content.publish.approved，按各平台的发布模式执行；
     record：人在平台上发完了，补登记（可带作品链接）；try / retry：交给发布台的子进程。"""
@@ -230,7 +279,8 @@ def handle_get(rt, path: str, q: dict) -> dict | list:
             raise ApiError(404, "没有这个线程")
         return page
     if path == "/api/triggers":
-        return [views.trigger_row(rt, t) for t in rt.store.recent_triggers(int(q.get("limit", 60)), source=q.get("source"))]
+        human = {"1": True, "0": False}.get(str(q.get("human") or ""))     # human=1 只要人发的（面板“一条指令的旅程”用）
+        return [views.trigger_row(rt, t) for t in rt.store.recent_triggers(int(q.get("limit", 60)), source=q.get("source"), human=human)]
     if path == "/api/decisions":
         return views.decisions(rt, q.get("kind") or None, int(q.get("limit", 80)))
     if path == "/api/sources":
@@ -276,6 +326,8 @@ def handle_get(rt, path: str, q: dict) -> dict | list:
 
 def handle_post(rt, path: str, body: dict, trusted: bool = False) -> dict | list:
     """trusted = 请求带着宿主交给确定性脚本的令牌。只有这样发来的事件才能越过“需要人批准”的守门。"""
+    if path == "/api/demands":   # 需求池：{action: approve|watch|shelve|reopen, id, confirm?, reason?} 或 {action: add, text}
+        return demands_action(rt, body)
     if path == "/api/publish/packs":
         return publish_packs_action(rt, body)
     if path == "/api/publish/accounts":

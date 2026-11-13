@@ -81,6 +81,18 @@ def test_reply_to_ticket_from_panel_is_a_followup(world, api):
     assert api("POST", "/api/tickets/T1/stop", {})[1]["label"] == "已完成"       # 已结束的工单再停没有效果
 
 
+
+def test_triggers_can_be_filtered_to_what_people_said(world, api):
+    """面板“一条指令的旅程”只要人发的触发：human=1 只回人发的，human=0 只回定时和流水线的。"""
+    world.cli.ask("MOCK_WAIT 盯一下数据")
+    world.schedule.fire("cron.publish_batch_card")
+    world.pump()
+    people = api("GET", "/api/triggers?human=1&limit=50")[1]
+    machines = api("GET", "/api/triggers?human=0&limit=50")[1]
+    assert people and all(t["human"] for t in people) and people[0]["text"] == "MOCK_WAIT 盯一下数据"
+    assert machines and not any(t["human"] for t in machines)
+    assert len(api("GET", "/api/triggers?limit=50")[1]) == len(people) + len(machines)
+
 def dingtalk(world, text, sender="u1", mid="m1"):
     return world.dingtalk.handle({"event_type": "user_im_message_receive_group", "conversation_id": "chatA", "message_id": mid,
                                   "sender_open_dingtalk_id": sender, "text": text})

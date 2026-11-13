@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY, ticket TEXT, kind TEXT, 
   reason TEXT, value TEXT);
 CREATE TABLE IF NOT EXISTS run (id TEXT PRIMARY KEY, ticket TEXT, assignment TEXT, role TEXT, agent TEXT, is_fallback INTEGER,
   started_at TEXT, finished_at TEXT, status TEXT, error_kind TEXT, error_detail TEXT, session_id TEXT, cost_usd REAL,
-  duration_s REAL, dir TEXT);
+  duration_s REAL, dir TEXT, model TEXT, effort TEXT);
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS counter (day TEXT, name TEXT, value REAL DEFAULT 0, PRIMARY KEY (day, name));
 CREATE INDEX IF NOT EXISTS idx_thread_active ON thread(active) WHERE active = 1;
@@ -225,6 +225,10 @@ class Store:
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA synchronous=NORMAL")
         self.db.executescript(DDL)
+        have = {r[1] for r in self.db.execute("PRAGMA table_info(run)")}
+        for col in ("model", "effort"):            # 2026-11-13 加的两列：这一轮实际用的模型和思考强度；旧库启动时补上
+            if col not in have:
+                self.db.execute(f"ALTER TABLE run ADD COLUMN {col} TEXT")
         self.lock = threading.RLock()
         self._depth = 0
         self._after: list[Callable[[], None]] = []
@@ -327,14 +331,14 @@ class Store:
     # ---- 运行记录（每次拉起 Agent / 脚本一行）
 
     def save_run(self, run: dict) -> None:
-        cols = ("id", "ticket", "assignment", "role", "agent", "is_fallback", "started_at", "finished_at", "status", "error_kind",
-                "error_detail", "session_id", "cost_usd", "duration_s", "dir")
+        cols = ("id", "ticket", "assignment", "role", "agent", "model", "effort", "is_fallback", "started_at", "finished_at", "status",
+                "error_kind", "error_detail", "session_id", "cost_usd", "duration_s", "dir")
         self.run(f"INSERT OR REPLACE INTO run({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
                  tuple(run.get(c) for c in cols))
 
     def runs(self, ticket: str | None = None, limit: int = 50, since: str | None = None) -> list[dict]:
-        cols = ("id", "ticket", "assignment", "role", "agent", "is_fallback", "started_at", "finished_at", "status", "error_kind",
-                "error_detail", "session_id", "cost_usd", "duration_s", "dir")
+        cols = ("id", "ticket", "assignment", "role", "agent", "model", "effort", "is_fallback", "started_at", "finished_at", "status",
+                "error_kind", "error_detail", "session_id", "cost_usd", "duration_s", "dir")
         where, args = [], []
         if ticket:
             where.append("ticket=?")
@@ -353,8 +357,11 @@ class Store:
                         (key, limit))
         return [_l(r[0]) for r in rows]
 
-    def recent_triggers(self, limit: int = 50, since: str | None = None, source: str | None = None) -> list[dict]:
+    def recent_triggers(self, limit: int = 50, since: str | None = None, source: str | None = None, human: bool | None = None) -> list[dict]:
         where, args = [], []
+        if human is not None:
+            where.append("human=?")
+            args.append(1 if human else 0)
         if since:
             where.append("at>=?")
             args.append(since)

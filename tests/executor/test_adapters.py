@@ -247,3 +247,14 @@ def test_审查类规则没给结论不能悄悄结束():
     # 结论在之前某一轮发过：之后的轮次（比如重启后确认一下）可以直接结束
     assert ex._require_conclusion("t1", run, {"state": "ready", "summary": "已发过"}, None)["state"] == "ready"
     assert ex._require_conclusion("t2", run, {"state": "waiting", "summary": "等"}, None)["state"] == "waiting"
+
+
+def test_模型和强度原样交给命令行_codex_的_max_不再降档(tmp_path):
+    from dataclasses import replace
+    from superops.executor.adapters import ClaudeAdapter, CodexAdapter
+    cx = replace(_spec(tmp_path, {"type": "codex", "bin": "/opt/codex"}, "readonly"), effort="max", model="gpt-6.1-sol")
+    cmd = CodexAdapter().build_cmd(cx, tmp_path / "last.txt")
+    assert "model_reasoning_effort=max" in cmd and cmd[cmd.index("-m") + 1] == "gpt-6.1-sol"
+    cl = replace(_spec(tmp_path, {"type": "claude", "bin": "/opt/claude"}, "readonly"), effort="high", model="fable")
+    cmd = ClaudeAdapter().build_cmd(cl)
+    assert cmd[cmd.index("--effort") + 1] == "high" and cmd[cmd.index("--model") + 1] == "fable"

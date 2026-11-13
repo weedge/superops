@@ -110,7 +110,9 @@ def test_business_reflects_ops_db(home):
     assert [x["id"] for x in dm] == ["dm_2", "dm_1"] and dm[1]["mr_links"] == ["https://g/x/merge_requests/7", "https://g/x/merge_requests/9"]
     assert dm[1]["persona_dist"] == {"保险": 2} and dm[1]["has_prd"] is True and "prd_path" not in dm[1]
     sig = d["demand"]["signals"]
-    assert (sig["total"], sig["unassigned"]) == (2, 1) and len(sig["recent"][0]["quote"]) == 160    # 原话截短
+    assert (sig["total"], sig["unassigned"]) == (2, 1) and len(sig["recent"][0]["quote"]) == 240    # 原话截短
+    assert [x["quote"] for x in sig["unassigned_recent"]] == ["没归类"] and {x["label"] for x in sig["kind_group"]} == {"功能需求", "吐槽"}
+    assert dm[1]["task"] is None and dm[1]["shelved_reason"] is None
 
     g = d["growth"]
     assert g["total"] == 2 and {"label": "已发卡", "n": 1} in g["stages"] and g["leads"][0]["id"] == "ld_1"

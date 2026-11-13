@@ -523,14 +523,15 @@ def test_运行记录的存取_按工单和起始时间筛_新的在前(store):
         return {"id": id_, "ticket": ticket_id, "assignment": "a1", "role": "write", "agent": "claude", "is_fallback": 0, "started_at": started,
                 "finished_at": started, "status": "ok", **extra}
 
-    store.save_run(run("r1", "t1", "2026-11-11T08:00:00+08:00", session_id="s1", cost_usd=0.12, duration_s=3.5, dir="/tmp/x"))
+    store.save_run(run("r1", "t1", "2026-11-11T08:00:00+08:00", session_id="s1", cost_usd=0.12, duration_s=3.5, dir="/tmp/x",
+                       model="opus", effort="high"))
     store.save_run(run("r2", "t2", "2026-11-11T09:00:00+08:00", status="timeout", error_kind="timeout", error_detail="超时", is_fallback=1))
     store.save_run(run("r3", "t1", "2026-11-11T10:00:00+08:00"))
     assert [r["id"] for r in store.runs()] == ["r3", "r2", "r1"]
     assert [r["id"] for r in store.runs("t1")] == ["r3", "r1"] and [r["id"] for r in store.runs(limit=1)] == ["r3"]
     assert [r["id"] for r in store.runs(since="2026-11-11T09:00:00+08:00")] == ["r3", "r2"]
     first = store.runs("t1")[-1]
-    assert first == {"id": "r1", "ticket": "t1", "assignment": "a1", "role": "write", "agent": "claude", "is_fallback": 0,
+    assert first == {"id": "r1", "ticket": "t1", "assignment": "a1", "role": "write", "agent": "claude", "model": "opus", "effort": "high", "is_fallback": 0,
                      "started_at": "2026-11-11T08:00:00+08:00", "finished_at": "2026-11-11T08:00:00+08:00", "status": "ok", "error_kind": None,
                      "error_detail": None, "session_id": "s1", "cost_usd": 0.12, "duration_s": 3.5, "dir": "/tmp/x"}
     store.save_run(run("r1", "t1", "2026-11-11T08:00:00+08:00", status="error"))       # 同一个 id 再存是覆盖

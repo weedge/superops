@@ -118,11 +118,18 @@ def _data_view(ops) -> dict:
 
 def _demand_view(ops) -> dict:
     demands = db.rows(ops.execute("SELECT id, title, kind, module, signal_count, persona_dist, value_factor, cost_size, score, status,"
-                                  " prd_path, mr_links, updated_at FROM demands ORDER BY score DESC, updated_at DESC LIMIT 60"))
+                                  " prd_path, mr_links, decided_ref, task, is_test, updated_at FROM demands ORDER BY score DESC, updated_at DESC LIMIT 60"))
     for d in demands:
         d["persona_dist"] = _load(d["persona_dist"], {}) or {}
         d["mr_links"] = [x for x in (d["mr_links"] or "").split(",") if x]
         d["has_prd"] = bool(d.pop("prd_path"))
+        ref = d.pop("decided_ref") or ""
+        d["shelved_reason"] = ref.split("：", 1)[1] if d["status"] == "shelved" and "：" in ref else None
+    kinds: dict[str, int] = {}
+    for kind, n in ops.execute("SELECT kind, COUNT(*) FROM signals GROUP BY kind"):
+        top = str(kind or "未分类").split("/")[0].strip() or "未分类"     # “体验优化 / 计费透明”归到“体验优化”
+        kinds[top] = kinds.get(top, 0) + n
+    sig_cols = "quote, kind, module, persona, intensity, source_type, source_ref, demand_id, created_at"
     return {
         "demands": demands,
         "total": _count(ops, "SELECT COUNT(*) FROM demands"),
@@ -130,9 +137,12 @@ def _demand_view(ops) -> dict:
         "signals": {"total": _count(ops, "SELECT COUNT(*) FROM signals"),
                     "unassigned": _count(ops, "SELECT COUNT(*) FROM signals WHERE demand_id IS NULL"),
                     "source": _dist(ops, "signals", "source_type", limit=12), "kind": _dist(ops, "signals", "kind", limit=12),
-                    "recent": [{**r, "quote": _clip(r["quote"], 160)} for r in db.rows(ops.execute(
-                        "SELECT quote, kind, module, persona, intensity, source_type, demand_id, created_at FROM signals"
-                        " ORDER BY created_at DESC, intensity DESC LIMIT 50"))]},
+                    "kind_group": [{"label": k, "n": n} for k, n in sorted(kinds.items(), key=lambda x: -x[1])][:8],
+                    "module": _dist(ops, "signals", "module", "未标模块", limit=8),
+                    "recent": [{**r, "quote": _clip(r["quote"], 240)} for r in db.rows(ops.execute(
+                        f"SELECT {sig_cols} FROM signals ORDER BY created_at DESC, intensity DESC LIMIT 50"))],
+                    "unassigned_recent": [{**r, "quote": _clip(r["quote"], 240)} for r in db.rows(ops.execute(
+                        f"SELECT {sig_cols} FROM signals WHERE demand_id IS NULL ORDER BY intensity DESC, created_at DESC LIMIT 30"))]},
     }
 
 
@@ -198,8 +208,10 @@ def business(days: int = 7) -> dict:
       done / pending / overdue / skipped + series 全部快照按时间排 + comments_collected 采到的评论数）、
       recent_comments（最近 20 条评论，原文截到 160 字）、jobs（各状态的节点数）、upcoming_jobs（最近要采的 12 个节点）、
       snapshots（快照总数）、platforms 分布、comments（total 与 category / sentiment / reply 分布）。
-    - demand（需求与开发）：demands（按分数排前 60，persona_dist 已解析、mr_links 是列表、has_prd）、total、
-      status 分布、signals（total、unassigned 未归到需求的、source / kind 分布、recent 最近 12 条，原话截到 160 字）。
+    - demand（需求与开发）：demands（按分数排前 60，persona_dist 已解析、mr_links 是列表、has_prd、task 开发工单、
+      is_test、shelved_reason 搁置原因）、total、status 分布、signals（total、unassigned 未归到需求的、source / kind 分布、
+      kind_group 按大类（“体验优化 / 计费透明”算“体验优化”）、module 分布、recent 最近 50 条、unassigned_recent 没归到需求的
+      30 条（强度高的在前），原话截到 240 字）。
     - growth（获客 / 线索）：total、stages / types / industries / platforms 分布、leads（按分数排前 40）、
       terms（监听意图词与近 7 天命中数）。
     - funnel（渠道漏斗，窗口内）：daily（按日期倒序，每天的 clicks / registrations / first_done / second_done / paid）、

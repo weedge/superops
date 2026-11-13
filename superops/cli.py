@@ -153,6 +153,24 @@ def check() -> tuple[list[str], list[str]]:
     except Exception as error:  # noqa: BLE001
         return [f"policy.yaml 不合法：{error}"], []
     agents, chains = cfg.get("agents") or {}, cfg.get("fallback_chains") or {}
+    if settings["eval"].get("role") not in chains:
+        errors.append(f"主 Session 的角色 {settings['eval'].get('role')}（policy.yaml 的 eval.role）在 agents.yaml 的 fallback_chains 里没有")
+    for name, ac in agents.items():      # 模型和思考强度：角色要在降级链里，强度要是认识的档位；不调用模型的 Agent 不该配
+        tuned = ac.get("models") or {}
+        for role, t in tuned.items():
+            if role not in chains:
+                errors.append(f"Agent {name}：models 里的角色 {role} 在 fallback_chains 里没有")
+            if not isinstance(t, dict):
+                errors.append(f"Agent {name}：models.{role} 要写成 {{model, effort}}")
+            elif t.get("effort") and t["effort"] not in cfgmod.EFFORT:
+                errors.append(f"Agent {name}：models.{role}.effort 是 {t['effort']}，只认 {'/'.join(sorted(cfgmod.EFFORT))}")
+        if ac.get("default_effort") and ac["default_effort"] not in cfgmod.EFFORT:
+            errors.append(f"Agent {name}：default_effort 是 {ac['default_effort']}，只认 {'/'.join(sorted(cfgmod.EFFORT))}")
+        if ac.get("type") in ("script", "inbox") and (tuned or ac.get("default_model")):
+            warnings.append(f"Agent {name}：{'脚本' if ac['type'] == 'script' else '收件箱'}不调用模型，models / default_model 不会生效")
+        for role, chain in chains.items():
+            if name in (chain or []) and ac.get("type") not in ("script", "inbox") and tuned and role not in tuned and not ac.get("default_model"):
+                warnings.append(f"Agent {name} 在 {role} 的降级链里，但 models 没配这个角色、也没有 default_model：会用 CLI 自己的默认模型")
     always = 0
     for rule in settings["policy"]["rules"]:
         run = rule["run"]

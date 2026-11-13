@@ -27,6 +27,12 @@ popto_help_dir: "../docs/popto-help"   # Popto 帮助文档：写脚本 / 复核
 #   claude：workspace / dev 档位 allowedTools 失效（bypass 下非白名单 Bash 也能跑），只剩禁用清单 △
 #   agy   ：--dangerously-skip-permissions 压过 --sandbox ✗
 # strict_tiers 里的档位绕开包装脚本、直调 strict_bin，代理取包装脚本里的 PROXY=（或 agents.<名>.proxy）。
+# 模型和思考强度（models）：每个 Agent 按它在各角色里干的活配。一轮实际用哪个，按这个顺序取第一个有的：
+#   模型：规则的 run.model（{Agent: 模型} 或只给规则指定 Agent 的字符串）→ models.<角色>.model → default_model → CLI 自己的默认
+#   强度：规则的 run.effort（某类任务特意定的，例如写脚本 high）→ models.<角色>.effort → default_effort
+# 强度档位 low / medium / high / xhigh / max（Claude 和 Codex 都支持）。每次运行实际用的模型和强度记在运行记录里。
+# 角色：route 主 Session 研判 · decide 拍方向 · write 撰写 · classify 分拣 · review 复核审查 · dev 开发 · ops 排障
+#      browser 开浏览器 · video 看视频 · image 看图
 agents:                       # title / duty：面板运转图上的称号和职责（改了重启服务生效）
   claude:
     title: 主笔
@@ -36,9 +42,22 @@ agents:                       # title / duty：面板运转图上的称号和职
     strict_bin: "~/.local/bin/claude"
     strict_tiers: []          # 想让 workspace / dev 也严格按白名单：[workspace, browser, dev]
     concurrency: 3
-    default_model: null       # null = 用 CLI 默认模型；规则里可用 run.model 覆盖
+    default_model: claude-opus-5-5   # 写全名，版本固定：claude-fable-5-2（最强）/ claude-opus-5-5 / claude-sonnet-5-5 / claude-haiku-5-5
+                                     # 也能写别名 fable / opus / sonnet（跟着 CLI 自动换最新版，但面板和运行记录里看不出具体版本）
+    default_effort: medium
+    models:
+      route:    {model: claude-sonnet-5-5,  effort: medium}   # 主 Session 研判：一天几百次，判断接不接、交给谁，要快，依据都在提示词里
+      decide:   {model: claude-fable-5-2,   effort: high}     # 排选题、周报与需求 Top 10、竞品评审、上新选题：一周几次，定方向，用最强的
+      write:    {model: claude-opus-5-5,    effort: medium}   # 日报、复盘、发布包、竞品报告；写脚本在规则里另定 high
+      classify: {model: claude-sonnet-5-5,  effort: low}      # 评论分拣、线索判断、需求归并：量大、套路固定，要快要省
+      dev:      {model: claude-fable-5-2,   effort: high}     # 写 PRD、开发、按审查意见修改：一次几十分钟，改错代价高
+      review:   {model: claude-opus-5-5,    effort: high}     # 审查的兜底（Codex 不可用、或 Codex 是作者时）
+      ops:      {model: claude-opus-5-5,    effort: high}     # 线上故障排查的兜底
+      browser:  {model: claude-sonnet-5-5,  effort: medium}   # 浏览器监听、GEO 检查的兜底：步骤多、只浏览
+      video:    {model: claude-opus-5-5,    effort: medium}   # 看抽帧宫格和转写（视频质检、爆款拆解的兜底）
+      image:    {model: claude-opus-5-5,    effort: medium}
     resume: true              # 同一张工单的各轮接着同一个会话（--resume）；接不上时提示词里的“到目前为止”兜底
-    capabilities: [decide, write, classify, dev, review, ops, image, video_degraded]
+    capabilities: [route, decide, write, classify, dev, review, ops, image, video_degraded]
     structured_output: true   # 用 --json-schema 取 structured_output
   codex:
     title: 审查员
@@ -48,7 +67,20 @@ agents:                       # title / duty：面板运转图上的称号和职
     strict_bin: "/opt/homebrew/bin/codex"   # 续接轮直调本体（包装脚本的 -s danger-full-access 会压过档位，见 adapters.CodexAdapter）
     resume: true              # 同一张工单的各轮接着同一个会话（codex exec resume）；续不上就新开一个，“到目前为止”兜底
     concurrency: 2
-    capabilities: [review, ops, dev, write, classify, decide, image, browser, video, video_degraded]
+    default_model: gpt-6.1-sol   # 本机可用：gpt-6-astra（最强）/ gpt-6.1-sol（主力）/ gpt-6.1-terra（Codex 专用）/ gpt-6-luna（快、省）
+    default_effort: medium       # 不配的话用 ~/.codex/config.toml 的全局设置（现在是 gpt-6-astra + xhigh，轻活也用最高档）
+    models:
+      review:   {model: gpt-6-astra,  effort: high}     # 脚本合规复核、MR 审查：漏一条就上线，用最强的；合规复核在规则里另定 medium
+      ops:      {model: gpt-6-astra,  effort: high}     # 线上故障排查（P0）
+      browser:  {model: gpt-6.1-sol,  effort: medium}   # 社媒监听补位、GEO 检查：专用浏览器里点来点去，只浏览，步骤多
+      video:    {model: gpt-6.1-sol,  effort: medium}   # 视频质检、爆款拆解：看抽帧和转写
+      image:    {model: gpt-6.1-sol,  effort: medium}
+      dev:      {model: gpt-6.1-terra, effort: high}    # 开发的兜底（Claude 不可用时）：Codex 专用的写代码模型
+      route:    {model: gpt-6.1-sol,  effort: medium}   # 以下是 Claude 不可用时的兜底，和 Claude 那边同档
+      decide:   {model: gpt-6-astra,  effort: high}
+      write:    {model: gpt-6.1-sol,  effort: medium}
+      classify: {model: gpt-6-luna,   effort: low}
+    capabilities: [route, review, ops, dev, write, classify, decide, image, browser, video, video_degraded]
     structured_output: false  # --output-schema 要求严格 Schema，改用提示词 + 宿主校验
   antigravity:                # 2026-11-12 起不可用：已从所有降级链和规则里摘掉，见下面 fallback_chains
     title: 视觉
@@ -58,6 +90,7 @@ agents:                       # title / duty：面板运转图上的称号和职
     strict_bin: "~/.local/bin/agy"
     strict_tiers: [readonly]  # 处理评论等不可信输入时必须真只读
     concurrency: 2
+    default_model: null       # 不可用期间不配；恢复时按它的 CLI 可用模型补上 models（看视频、看图、浏览器）
     capabilities: [video, image, browser, write, classify]
   workbuddy:
     title: 替补
@@ -66,7 +99,7 @@ agents:                       # title / duty：面板运转图上的称号和职
     inbox: "~/popto-superops-data/workbuddy-inbox"
     outbox: "~/popto-superops-data/workbuddy-outbox"
     max_wait: 6h
-    concurrency: 1
+    concurrency: 1            # 收件箱：由外部应用接活，模型和强度由它自己定，这里不配
     capabilities: [write, classify, video_degraded, image]
   script:
     title: 执行员
@@ -88,6 +121,7 @@ agent_browser:
   idle_timeout: 10m           # 浏览器档位的轮次（Codex；Antigravity 恢复后同样适用）这么久没有任何动作就提前结束、交给下一个 Agent；0 关掉
 
 fallback_chains:
+  route:    [claude, codex]   # 主 Session 研判（policy.yaml 的 eval.role）
   decide:   [claude, codex]
   write:    [claude, codex, workbuddy]
   classify: [claude, codex, workbuddy]

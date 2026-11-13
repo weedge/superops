@@ -54,6 +54,50 @@
 
 脚本做的是确定性的、常常是对外的动作，所以绝不因为一句话重跑：已结束的脚本工单被人的消息恢复时，宿主把这条消息交还去评估（由主 Session 决定它是不是一件新的工作），工单沿用原来的报告再次结束，脚本不执行。要重跑脚本：失败的工单用“重试”；已完成的重新发一次它的触发（定时类用 `superops fire <cron.类型>`）。
 
+## 模型和思考强度
+
+同一个 Agent 干的活轻重差得很远：主 Session 研判一天几百次，要快；排选题、写 PRD 一周几次，要想得深。所以模型和思考强度按“哪个 Agent × 干哪种活（角色）”配，写在 `agents.yaml` 的 `agents.<名>.models`：
+
+```yaml
+claude:
+  default_model: claude-opus-5-5
+  default_effort: medium
+  models:
+    route:    {model: claude-sonnet-5-5, effort: medium}   # 主 Session 研判（policy.yaml 的 eval.role）
+    decide:   {model: claude-fable-5-2, effort: high}      # 排选题、周报、竞品评审
+    classify: {model: claude-sonnet-5-5, effort: low}      # 评论分拣、线索、需求归并
+    dev:      {model: claude-fable-5-2, effort: high}      # PRD、开发、按审查意见改
+```
+
+一轮实际用哪个，按顺序取第一个有的：
+
+| | 依次取 |
+| --- | --- |
+| 模型 | 规则的 `run.model` → `models.<角色>.model` → `default_model` → 命令行自己的默认（Codex 是 `~/.codex/config.toml`） |
+| 强度 | 规则的 `run.effort` → `models.<角色>.effort` → `default_effort` |
+
+- 规则的 `run.effort` 是某一类任务特意定的（写脚本、竞品调研 `high`，合规复核 `medium`），优先于角色的默认。
+- 规则的 `run.model` 写成字符串时只给规则指定的那个 Agent（`run.agent`）；降级到别的 Agent 时不带过去，免得把 Claude 的模型名传给 Codex。要给每个 Agent 各指定一个，写成 `{claude: opus, codex: gpt-6.1-sol}`。
+- 强度档位 `low` / `medium` / `high` / `xhigh` / `max`，Claude（`--effort`）和 Codex（`model_reasoning_effort`）都原样收。Claude 的模型写全名（`claude-fable-5-2` / `claude-opus-5-5` / `claude-sonnet-5-5` / `claude-haiku-5-5`），版本固定，面板和运行记录里看得到具体版本；也能写别名 `fable` / `opus` / `sonnet`，跟着命令行自动换最新版。
+- 每次运行实际用的模型和强度记在运行记录里（`superops ticket T12` 的运行、面板工单详情和“一条指令的旅程”都能看到）；面板运转图的 Agent 卡片上按“模型 · 强度：哪些角色”列出配置。
+- `superops check` 校验：`models` 里的角色要在 `fallback_chains` 里、强度要是上面五档之一、`eval.role` 要有降级链；脚本和收件箱类的 Agent 不调用模型，配了会提醒。
+
+现在的配置（理由写在 `agents.yaml` 的注释里）：
+
+| 角色 | Claude | Codex |
+| --- | --- | --- |
+| route 主 Session 研判 | claude-sonnet-5-5 · medium | gpt-6.1-sol · medium |
+| decide 拍方向 | claude-fable-5-2 · high | gpt-6-astra · high |
+| write 撰写 | claude-opus-5-5 · medium（写脚本、竞品调研在规则里定 high） | gpt-6.1-sol · medium |
+| classify 分拣 | claude-sonnet-5-5 · low | gpt-6-luna · low |
+| dev 开发 | claude-fable-5-2 · high | gpt-6.1-terra · high |
+| review 复核审查 | claude-opus-5-5 · high（兜底） | gpt-6-astra · high（合规复核在规则里定 medium） |
+| ops 排障 | claude-opus-5-5 · high（兜底） | gpt-6-astra · high |
+| browser 浏览器 | claude-sonnet-5-5 · medium（兜底） | gpt-6.1-sol · medium |
+| video / image 看视频、看图 | claude-opus-5-5 · medium（兜底） | gpt-6.1-sol · medium |
+
+Antigravity 不可用期间不配；WorkBuddy 走收件箱，模型由接活的应用自己定；脚本不调用模型。
+
 ## 报告怎么落地
 
 Agent 每一轮的输出是一个 JSON 对象。宿主按下面的顺序把它落下来；任何一步被领域的规则拒绝，只丢掉那一项，报告本身不丢。
@@ -161,7 +205,7 @@ MR 开出来之后：
 
 冷却结束后放一轮进去试，成功就恢复。降级链上还有没试过的 Agent 只是在忙、熔断中或被暂停时，这一轮排队等（30 秒后再试），输入留在队列里，不记失败。这一轮已经试过并失败的 Agent 记在库里，排队期间不会被重新拉起。链上的 Agent 都试过且都没成，工单报告 `failed`。
 
-`decide`、`dev`、`review` 的降级链只有 Claude 和 Codex：它们都不可用时工单等着，不交给更弱的 Agent。一个 Agent 持续不可用超过 `alert_after_unavailable`（2 小时）发一条 P0 告警。`superops agents` 看状态，`superops agents reset <名>` 手动解除熔断。
+`route`、`decide`、`dev`、`review` 的降级链只有 Claude 和 Codex：它们都不可用时工单等着，不交给更弱的 Agent。一个 Agent 持续不可用超过 `alert_after_unavailable`（2 小时）发一条 P0 告警。`superops agents` 看状态，`superops agents reset <名>` 手动解除熔断。
 
 ### 受阻、失败与重试
 

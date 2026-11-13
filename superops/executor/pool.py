@@ -77,6 +77,9 @@ class AgentPool:
     def states(self) -> dict[str, dict]:
         return {name: {**self.state(name), "busy": self.busy.get(name, 0), "concurrency": int(cfg.get("concurrency", 1)),
                        "title": cfg.get("title") or "", "duty": cfg.get("duty") or "",
+                       "models": {role: {"model": t.get("model") or cfg.get("default_model"), "effort": t.get("effort") or cfg.get("default_effort")}
+                                  for role, t in (cfg.get("models") or {}).items()},
+                       "default_model": cfg.get("default_model"), "default_effort": cfg.get("default_effort"),
                        "installed": adapter_for(cfg).available(cfg), "paused": self.settings.is_paused(f"agent:{name}")}
                 for name, cfg in self.agents().items()}
 
@@ -157,6 +160,23 @@ class AgentPool:
         with self.lock:
             self.busy[agent] = max(0, self.busy.get(agent, 0) - 1)
 
+    # ---- 模型和思考强度
+
+    def tuning(self, agent: str, role: str, effort: str | None = None, model: str | dict | None = None,
+               owner: str | None = None) -> tuple[str | None, str | None]:
+        """这一轮实际用的模型和思考强度。
+        模型：规则的 run.model（写成 {Agent: 模型} 按 Agent 取；写成字符串只给规则指定的那个 Agent，降级到别的 Agent 不带过去，
+        免得把 Claude 的模型名传给 Codex）→ agents.<名>.models.<角色>.model → agents.<名>.default_model → CLI 自己的默认。
+        强度：规则的 run.effort（这一类任务特意定的）→ agents.<名>.models.<角色>.effort → agents.<名>.default_effort。"""
+        acfg = self.agents().get(agent) or {}
+        per = (acfg.get("models") or {}).get(role) or {}
+        if isinstance(model, dict):
+            picked = model.get(agent)
+        else:
+            picked = model if model and owner in (None, agent) else None
+        return (picked or per.get("model") or acfg.get("default_model") or None,
+                effort or per.get("effort") or acfg.get("default_effort") or None)
+
     # ---- 跑一次
 
     def _idle_timeout(self, tools: str, acfg: dict) -> float:
@@ -209,8 +229,9 @@ class AgentPool:
                     text = prompt(agent, errors, index > 0)
                     n = len(list(run_dir.glob("turn-*.md")))
                     (run_dir / f"turn-{n:03d}-{agent}.md").write_text(text, encoding="utf-8")
+                    use_model, use_effort = self.tuning(agent, role, effort, model, prefer)
                     spec = RunSpec(task_id=ticket or run_dir.name, run_dir=run_dir, cwd=cwd or run_dir, prompt=text, schema=schema,
-                                   schema_path=schema_path, tools=tools, effort=effort, model=model, timeout=timeout, agent_cfg=acfg,
+                                   schema_path=schema_path, tools=tools, effort=use_effort, model=use_model, timeout=timeout, agent_cfg=acfg,
                                    env={**agent_env(self.cfg), **(env or {})}, alive=alive, extra_dirs=extra_dirs or [],
                                    session=(session or {}).get(agent), idle_timeout=self._idle_timeout(tools, acfg),
                                    network=network)
@@ -230,7 +251,8 @@ class AgentPool:
                     elif errors:
                         kind = "invalid"
                     self.store.save_run({"id": f"run_{uuid.uuid4().hex[:12]}", "ticket": ticket, "assignment": assignment, "role": role,
-                                         "agent": agent, "is_fallback": int(index > 0), "started_at": started, "finished_at": iso(),
+                                         "agent": agent, "model": use_model, "effort": use_effort,
+                                         "is_fallback": int(index > 0), "started_at": started, "finished_at": iso(),
                                          "status": "ok" if kind is None else kind, "error_kind": kind,
                                          "error_detail": ("；".join(errors) if errors else res.error_text)[:2000] if kind else None,
                                          "session_id": res.session_id, "cost_usd": res.cost_usd,

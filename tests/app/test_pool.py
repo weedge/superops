@@ -572,3 +572,39 @@ def test_手动熔断_给了时长就用它(bench):
     assert b.run().agent == "b"
     timeutil.set_fake_now(T0 + timedelta(minutes=10))
     assert b.run().agent == "a"
+
+
+# ---------------------------------------------------------------- 模型和思考强度
+
+
+def test_模型和强度按Agent和角色取_规则的模型不串给降级的Agent(bench):
+    b = bench({"a": "ok", "b": "ok"})
+    b.cfg["agents"]["a"].update(models={"write": {"model": "m-a", "effort": "high"}}, default_effort="low")
+    b.cfg["agents"]["b"].update(default_model="m-b", default_effort="medium")
+    p = b.pool
+    assert p.tuning("a", "write") == ("m-a", "high")
+    assert p.tuning("a", "classify") == (None, "low")                                  # 没配这个角色：默认强度，模型交给 CLI
+    assert p.tuning("a", "write", effort="max") == ("m-a", "max")                      # 规则特意定的强度优先
+    assert p.tuning("a", "write", model="rule-m", owner="a") == ("rule-m", "high")
+    assert p.tuning("b", "write", model="rule-m", owner="a") == ("m-b", "medium")      # 降级到 b：不把 a 的模型名带过去
+    assert p.tuning("b", "write", model={"a": "x", "b": "y"}, owner="a") == ("y", "medium")
+    assert b.run().ok and b.rows("agent, model, effort") == [("a", "m-a", "high")]   # 运行记录里记着实际用的
+    assert p.states()["a"]["models"] == {"write": {"model": "m-a", "effort": "high"}}  # 面板运转图用
+
+
+def test_旧库的运行记录表启动时补上模型和强度两列(tmp_path):
+    import sqlite3
+    db = tmp_path / "old.sqlite"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE run (id TEXT PRIMARY KEY, ticket TEXT, assignment TEXT, role TEXT, agent TEXT, is_fallback INTEGER,"
+                " started_at TEXT, finished_at TEXT, status TEXT, error_kind TEXT, error_detail TEXT, session_id TEXT, cost_usd REAL,"
+                " duration_s REAL, dir TEXT)")
+    con.execute("INSERT INTO run(id, agent, status) VALUES ('r0', 'claude', 'ok')")
+    con.commit()
+    con.close()
+    store = Store(db)
+    try:
+        store.save_run({"id": "r1", "agent": "codex", "model": "gpt-x", "effort": "high", "status": "ok"})
+        assert {(r["id"], r["model"], r["effort"]) for r in store.runs()} == {("r0", None, None), ("r1", "gpt-x", "high")}
+    finally:
+        store.close()
