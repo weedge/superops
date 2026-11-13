@@ -1,14 +1,17 @@
 """面板的发布台：社媒账号（各平台创作者后台的登录态）和发布包的操作。
 
-- 账号：每个平台一个专用 Chrome 登录目录（~/popto-superops-data/browser-profiles/<平台>/），一个平台一个账号。
+- 账号：每个号一个专用 Chrome 登录目录（~/popto-superops-data/browser-profiles/<账号键>/）。同一平台可以登多个号：
+  主号的账号键就是平台名（douyin），“添加账号”加的号是 douyin@2、douyin@3……每个平台有一个默认账号（发布包没指定账号、
+  评论引流、登录检查都用它），没设过就是主号。
   抖音、小红书、视频号能自动发布；快手、B站、知乎、公众号只管账号（登录、校验、读身份、退出），发布走人工路径。
   面板能做的（参照 Easel 的账号页）：扫码登录 / 换号（无界面打开登录页，二维码截图在面板里显示，手机扫；抖音要短信验证码时
   面板里填）、校验账号（无界面，顺带读出昵称、头像、粉丝数）、在这台 Mac 上开窗口登录（备用）、打开草稿箱（有界面）、
-  退出登录（登录目录挪到回收处，不直接删）。
+  添加账号、设为默认、退出登录（登录目录挪到回收处，不直接删；后加的号退出就是移除）。
 - 发布包：批准发布（等于在群里批了发布卡片：发出带人工批准凭据的 content.publish.approved，按平台模式执行）、
   预演（只试运行，不点发布）、重试（自动发布失败转人工的，用原来的批准再发一次）、人工发完补登记。
 - 浏览器操作都很慢（登录最多 5 分钟、打开草稿箱最多 1 小时），放到独立子进程里跑，状态记在内存里给面板轮询；
-  同一平台同一时间只跑一个（登录目录本来也只能开一个 Chrome）。
+  同一个号同一时间只跑一个（登录目录本来也只能开一个 Chrome）。
+- 发布包：发到哪个号可以在面板上改（publish_packs.account 存账号键，空着就用默认账号）。
 """
 from __future__ import annotations
 
@@ -24,11 +27,11 @@ from pathlib import Path
 from ..biz import paths
 
 ACTIONS = {
-    # 动作: (标签, 作用对象, 有没有界面, 子进程参数)
-    "check": ("校验账号", "platform", False, ["publish", "check"]),
-    "qrlogin": ("扫码登录", "platform", False, ["publish", "qrlogin"]),
-    "login": ("开窗口登录", "platform", True, ["publish", "login"]),
-    "open": ("打开草稿箱", "platform", True, ["publish", "open"]),
+    # 动作: (标签, 作用对象（account 账号键 / pack 发布包 ID）, 有没有界面, 子进程参数)
+    "check": ("校验账号", "account", False, ["publish", "check"]),
+    "qrlogin": ("扫码登录", "account", False, ["publish", "qrlogin"]),
+    "login": ("开窗口登录", "account", True, ["publish", "login"]),
+    "open": ("打开草稿箱", "account", True, ["publish", "open"]),
     "try": ("预演（不发布）", "pack", False, ["publish", "try"]),
     "retry": ("重试发布", "pack", False, ["publish", "retry"]),
 }
@@ -36,6 +39,8 @@ ACTIONS = {
 LIMITS = {"douyin": {"title": 30, "body": 1000, "topics": 5},
           "xiaohongshu": {"title": 20, "body": 1000, "topics": 5},
           "wechat_channels": {"title": 16, "title_min": 6, "body": 1000, "topics": 5}}
+# 发布包还能改账号的状态：发出去、存了草稿、不发的都不能改了
+ACCOUNT_EDITABLE = {"ready", "carded", "failed", "approved"}
 # 人工发布时打开的官方发布页（用你自己浏览器的登录态，和专用 Chrome 的登录目录无关）
 UPLOAD_URL = {"douyin": "https://creator.douyin.com/creator-micro/content/upload",
               "xiaohongshu": "https://creator.xiaohongshu.com/publish/publish?source=official",
@@ -56,24 +61,22 @@ def _pubs():
 
 
 def accounts_file() -> Path:
-    return paths.ops_data() / "browser-profiles" / "accounts.json"
+    return _pubs().registry_file()
 
 
 def _read_accounts() -> dict:
-    try:
-        return json.loads(accounts_file().read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
+    return _pubs().read_registry()
 
 
-def _write_account(platform: str, **fields) -> None:
-    data = _read_accounts()
-    data[platform] = {**(data.get(platform) or {}), **fields}
-    f = accounts_file()
-    f.parent.mkdir(parents=True, exist_ok=True)
-    tmp = f.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-    tmp.replace(f)
+def _write_account(key: str, **fields) -> None:
+    _pubs().write_account(key, **fields)
+
+
+def _key(target: str) -> str:
+    pubs = _pubs()
+    if not pubs.is_account_key(target):
+        raise PublishError(400, f"不认识的账号 {target}")
+    return target
 
 
 class PublishDesk:
@@ -86,64 +89,92 @@ class PublishDesk:
 
     # ── 查询 ──
     def _running(self, target: str) -> dict | None:
-        """target 是平台或发布包 ID：发布包的动作也占着它那个平台的登录目录。"""
-        return next((j for j in self.jobs.values() if j["state"] == "running" and target in (j["target"], j["platform"])), None)
+        """target 是账号键或发布包 ID：发布包的动作也占着它要发的那个号的登录目录。"""
+        return next((j for j in self.jobs.values() if j["state"] == "running" and target in (j["target"], j.get("account") or j.get("platform"))), None)
 
     def accounts(self) -> list[dict]:
+        """每个号一行（同一平台的号挨着，主号在前）：key 是账号键，platform 是平台，default 是不是这个平台的默认账号。"""
         pubs = _pubs()
         cfg = self._cfg()
         known = _read_accounts()
         out = []
         for pf, meta in pubs.ACCOUNTS.items():
-            prof = paths.ops_data() / "browser-profiles" / pf
             can = bool(meta.get("publish"))           # 只管账号的平台（快手、B站、知乎、公众号）还没有自动发布器
             mode = str(((cfg.get("publishers") or {}).get(pf) or {}).get("mode") or "off") if can else "none"
-            k = known.get(pf) or {}
-            job = self._running(pf)
-            av = self._qr().avatar_file(pf)
-            out.append({"platform": pf, "label": meta["label"], "mode": mode, "publish": can, "app": meta.get("app"),
-                        "profile": prof.exists() and any(prof.iterdir()),
-                        "status": k.get("status") or ("unknown" if prof.exists() else "none"), "checked_at": k.get("checked_at"),
-                        "logged_in_at": k.get("logged_in_at"), "url": k.get("url"), "note": k.get("note"),
-                        "nickname": (cfg.get("publish_accounts") or {}).get(pf) or k.get("nickname"),
-                        "name": k.get("name"), "account_id": k.get("account_id"), "followers": k.get("followers"),
-                        "avatar": av.stat().st_mtime_ns // 1_000_000 if av and k.get("status") == "ok" else None,
-                        "drafts": (pubs.DRAFTS.get(pf) or {}).get("where"), "home": meta.get("home"),
-                        "upload": UPLOAD_URL.get(pf) or meta.get("upload"), "limits": LIMITS.get(pf, {}),
-                        "busy": job and {"id": job["id"], "action": job["action"], "label": job["label"], "started_at": job["started_at"]}})
+            keys = pubs.account_keys(pf)
+            default = pubs.default_account(pf)
+            for key in keys:
+                prof = pubs.profiles_root() / key
+                k = known.get(key) or {}
+                job = self._running(key)
+                av = self._qr().avatar_file(key)
+                remark = ((cfg.get("publish_accounts") or {}).get(pf) if key == pf else None) or k.get("nickname")
+                out.append({"key": key, "platform": pf, "label": meta["label"], "main": key == pf, "default": key == default,
+                            "slug": key.split("@", 1)[1] if "@" in key else "", "accounts": len(keys),
+                            "mode": mode, "publish": can, "app": meta.get("app"),
+                            "profile": prof.exists() and any(prof.iterdir()),
+                            "status": k.get("status") or ("unknown" if prof.exists() else "none"), "checked_at": k.get("checked_at"),
+                            "logged_in_at": k.get("logged_in_at"), "url": k.get("url"), "note": k.get("note"),
+                            "nickname": remark, "name": k.get("name"), "account_id": k.get("account_id"), "followers": k.get("followers"),
+                            "avatar": av.stat().st_mtime_ns // 1_000_000 if av and k.get("status") == "ok" else None,
+                            "drafts": (pubs.DRAFTS.get(pf) or {}).get("where"), "home": meta.get("home"),
+                            "upload": UPLOAD_URL.get(pf) or meta.get("upload"), "limits": LIMITS.get(pf, {}),
+                            "busy": job and {"id": job["id"], "action": job["action"], "label": job["label"], "started_at": job["started_at"]}})
         return out
+
+    def add_account(self, platform: str, *, by: str = "panel") -> dict:
+        """给一个平台再加一个号：分配下一个账号键（douyin@2…），直接开始扫码登录。没登录成功的号留在列表里，可以重试或移除。"""
+        pubs = _pubs()
+        if platform not in pubs.ACCOUNTS:
+            raise PublishError(400, f"不认识的平台 {platform}")
+        with self._lock:
+            pending = [k for k in pubs.account_keys(platform)[1:] if (_read_accounts().get(k) or {}).get("status") in (None, "none")
+                       and not self._running(k)]
+            key = pending[0] if pending else pubs.next_account_key(platform)    # 上次加了没登上的号先复用，不越加越多
+            if not pending:
+                _write_account(key, status="none", added_at=self._now(), note=None)
+        job = self.start("qrlogin", key, by=by)
+        return {**job, "key": key}
+
+    def set_default(self, key: str) -> dict:
+        """设为这个平台的默认账号：发布包没指定账号的、评论引流、登录检查都用它。只能设登录着的号。"""
+        pubs = _pubs()
+        key = _key(key)
+        if (_read_accounts().get(key) or {}).get("status") != "ok":
+            raise PublishError(409, f"{pubs.account_label(key)}还没登录（或登录失效），先扫码登录再设为默认")
+        pubs.set_default(key)
+        return {"ok": True, "default": key}
 
     @staticmethod
     def _qr():
         from ..biz.executors.publishers import qrlogin
         return qrlogin
 
-    def login_status(self, platform: str) -> dict:
+    def login_status(self, key: str) -> dict:
         """扫码登录的实时状态（面板每秒拉一次）：状态、提示、二维码有没有更新、是否还在跑。"""
-        if platform not in _pubs().ACCOUNTS:
-            raise PublishError(400, f"不认识的平台 {platform}")
-        st = self._qr().read_status(platform)
-        job = self._running(platform)
+        key = _key(key)
+        st = self._qr().read_status(key)
+        job = self._running(key)
         running = bool(job and job["action"] == "qrlogin")
         if not running and st.get("state") not in (*self._qr().TERMINAL, "none"):
             st = {**st, "state": "error", "message": "登录进程已经结束：" + (st.get("message") or "没写原因")}
         return {**st, "running": running}
 
-    def submit_code(self, platform: str, code: str) -> dict:
+    def submit_code(self, key: str, code: str) -> dict:
         code = "".join(ch for ch in str(code or "") if ch.isdigit())
         if not 4 <= len(code) <= 8:
             raise PublishError(400, "验证码是 4–8 位数字")
-        if self.login_status(platform).get("state") not in ("sms_required", "verifying"):
+        if self.login_status(key).get("state") not in ("sms_required", "verifying"):
             raise PublishError(409, "现在不需要验证码")
-        self._qr().submit_code(platform, code)
+        self._qr().submit_code(key, code)
         return {"ok": True}
 
-    def cancel(self, platform: str) -> dict:
+    def cancel(self, key: str) -> dict:
         """关掉扫码弹窗：停掉登录进程，放开登录目录。"""
-        job = self._running(platform)
+        job = self._running(_key(key))
         if not job or job["action"] != "qrlogin":
             return {"ok": True, "stopped": False}
-        self._qr().write_status(platform, "cancelled", "已取消")
+        self._qr().write_status(key, "cancelled", "已取消")
         proc = job.get("_proc")
         if proc is not None and proc.poll() is None:
             proc.terminate()
@@ -158,32 +189,33 @@ class PublishDesk:
             raise PublishError(400, f"不认识的动作 {action}")
         label, kind, headed, args = ACTIONS[action]
         pubs = _pubs()
-        platform = target
-        if kind == "platform":
-            if target not in pubs.ACCOUNTS:
-                raise PublishError(400, f"不认识的平台 {target}")
-            if action == "open" and target not in pubs.DRAFTS:
-                raise PublishError(400, f"{pubs.ACCOUNTS[target]['label']}没有可打开的草稿箱")
+        if kind == "account":
+            account = _key(target)
+            if action == "open" and pubs.platform_of(account) not in pubs.DRAFTS:
+                raise PublishError(400, f"{pubs.account_label(account)}没有可打开的草稿箱")
         else:
             pack = self.pack_row(target)
-            platform = pack["platform"]
+            try:
+                account = pubs.pack_account(pack, self._pack_meta(pack))
+            except pubs.AccountError:
+                account = pack["platform"]        # 认不出账号：照样跑（发布器会报出来、转人工），按主号占位
+        platform = pubs.platform_of(account)
         with self._lock:
-            busy = self._running(platform) or self._running(target)
+            busy = self._running(account) or self._running(target)
             if busy:
-                raise PublishError(409, f"{pubs.ACCOUNTS.get(platform, {}).get('label', platform)}正在{busy['label']}，等它结束再试")
-            job = {"id": uuid.uuid4().hex[:10], "action": action, "label": label, "target": target, "platform": platform,
+                raise PublishError(409, f"{pubs.account_label(account)}正在{busy['label']}，等它结束再试")
+            # 账号动作按账号占位；发布包动作也占住它要发的那个号（同一个登录目录）
+            job = {"id": uuid.uuid4().hex[:10], "action": action, "label": label, "target": target, "account": account, "platform": platform,
                    "headed": headed, "by": by, "state": "running", "started_at": self._now(), "finished_at": None, "output": ""}
-            # 平台级动作按平台占位；发布包动作也占住它的平台（同一个登录目录）
-            job["target"] = platform if kind == "platform" else target
             self.jobs[job["id"]] = job
             for old in sorted(self.jobs.values(), key=lambda j: j["started_at"])[:-JOB_KEEP]:
                 if old["state"] != "running":
                     self.jobs.pop(old["id"], None)
         cmd = [*self._cli, *args, target]
         if action == "qrlogin":
-            self._qr().write_status(platform, "starting", "正在打开登录页、准备二维码……")
-            if str((_read_accounts().get(platform) or {}).get("note") or "").startswith("上次扫码"):
-                _write_account(platform, note=None)          # 重新扫码：上一次失败的提示不再挂着
+            self._qr().write_status(account, "starting", "正在打开登录页、准备二维码……")
+            if str((_read_accounts().get(account) or {}).get("note") or "").startswith("上次扫码"):
+                _write_account(account, note=None)          # 重新扫码：上一次失败的提示不再挂着
         if action == "retry":
             cmd.append("--headed")      # 平台要短信验证码时，人在弹出的窗口里完成
         threading.Thread(target=self._run, args=(job, cmd), daemon=True, name=f"publish-{action}-{target}").start()
@@ -212,45 +244,65 @@ class PublishDesk:
             ok = False
         (log / f"{job['started_at'][:19].replace(':', '')}-{job['action']}-{job['target']}.log").write_text(out, encoding="utf-8")
         who = {"name": acct.get("name") or None, "account_id": acct.get("id"), "followers": acct.get("followers")} if acct.get("name") else {}
+        key = job["account"]
         if job["action"] == "check":
             first = out.splitlines()[0] if out else ""
             ok = "✓" in first
             url = next((w for w in reversed(first.split()) if w.startswith("http")), None)
-            _write_account(job["platform"], status="ok" if ok else "expired", checked_at=self._now(), url=url,
-                           note=None if ok else "登录失效或没登录，扫码重新登录", **who)
+            _write_account(key, status="ok" if ok else "expired", checked_at=self._now(), url=url,
+                           note=(self._same_as(key, who) if ok else "登录失效或没登录，扫码重新登录"), **who)
         elif job["action"] == "qrlogin":
             ok = bool(acct.get("logged_in")) if acct else ok and "✓" in out
             if ok:
-                _write_account(job["platform"], status="ok", checked_at=self._now(), logged_in_at=self._now(), note=None, **who)
-            elif self._qr().read_status(job["platform"]).get("state") != "cancelled":
-                _write_account(job["platform"], note="上次扫码没登录成功：" + (self._qr().read_status(job["platform"]).get("message") or ""))
+                _write_account(key, status="ok", checked_at=self._now(), logged_in_at=self._now(), note=self._same_as(key, who), **who)
+            elif self._qr().read_status(key).get("state") != "cancelled":
+                _write_account(key, note="上次扫码没登录成功：" + (self._qr().read_status(key).get("message") or ""))
         elif job["action"] == "login":
             ok = ok and "登录成功" in out
-            _write_account(job["platform"], status="ok" if ok else "expired", checked_at=self._now(),
+            _write_account(key, status="ok" if ok else "expired", checked_at=self._now(),
                            **({"logged_in_at": self._now(), "note": None} if ok else {"note": "扫码超时或没登录成功"}))
         job.update(state="done" if ok else "failed", finished_at=self._now(), output=out[-4000:])
 
-    def logout(self, platform: str) -> dict:
-        """退出登录：把登录目录挪到 browser-profiles/.removed/<平台>-<时间>/（不直接删，误点还能挪回来）。"""
+    def _same_as(self, key: str, who: dict) -> str | None:
+        """同一平台的另一个号登的是同一个账号（同 ID，或没有 ID 时同名）：提醒一句，免得以为是两个号。"""
         pubs = _pubs()
-        if platform not in pubs.ACCOUNTS:
-            raise PublishError(400, f"不认识的平台 {platform}")
-        if self._running(platform):
-            raise PublishError(409, "这个平台正在执行别的操作，等它结束再退出")
-        prof = paths.ops_data() / "browser-profiles" / platform
-        if not prof.exists():
-            return {"ok": True, "moved": None}
-        dest = prof.parent / ".removed" / f"{platform}-{self._now()[:19].replace(':', '')}"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            with pubs.profile_lock(platform, 0):
-                shutil.move(str(prof), str(dest))
-        except pubs.ProfileBusy as e:
-            raise PublishError(409, str(e)) from e
-        _write_account(platform, status="none", checked_at=self._now(), note="已退出登录", logged_in_at=None, name=None, account_id=None, followers=None)
-        for f in self._qr().state_dir().glob(f"{platform}*"):      # 头像、二维码、扫码状态
+        if not who.get("name"):
+            return None
+        known = _read_accounts()
+        for other in pubs.account_keys(pubs.platform_of(key)):
+            o = known.get(other) or {}
+            if other == key or o.get("status") != "ok":
+                continue
+            if (who.get("account_id") and o.get("account_id") == who["account_id"]) or \
+                    (not (who.get("account_id") and o.get("account_id")) and o.get("name") == who["name"]):
+                return f"和 {pubs.account_label(other)}（{other}）是同一个号，可以退出其中一个"
+        return None
+
+    def logout(self, key: str) -> dict:
+        """退出登录：把登录目录挪到 browser-profiles/.removed/<账号键>-<时间>/（不直接删，误点还能挪回来）。
+        主号退出后还留在列表里（没登录）；后加的号退出就是移除：登记删掉，它是默认账号的话默认改回主号。"""
+        pubs = _pubs()
+        key = _key(key)
+        if self._running(key):
+            raise PublishError(409, "这个号正在执行别的操作，等它结束再退出")
+        prof = pubs.profiles_root() / key
+        dest = None
+        if prof.exists():
+            dest = prof.parent / ".removed" / f"{key}-{self._now()[:19].replace(':', '')}"
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                with pubs.profile_lock(key, 0):
+                    shutil.move(str(prof), str(dest))
+            except pubs.ProfileBusy as e:
+                raise PublishError(409, str(e)) from e
+        removed = key != pubs.platform_of(key)
+        if removed:
+            pubs.forget_account(key)
+        elif dest:
+            _write_account(key, status="none", checked_at=self._now(), note="已退出登录", logged_in_at=None, name=None, account_id=None, followers=None)
+        for f in self._qr().account_files(key):      # 头像、二维码、扫码状态（按名字精确匹配，不碰同平台别的号）
             f.unlink(missing_ok=True)
-        return {"ok": True, "moved": str(dest)}
+        return {"ok": True, "moved": str(dest) if dest else None, "removed": removed}
 
     # ── 发布包 ──
     def pack_row(self, pack_id: str) -> dict:
@@ -265,9 +317,33 @@ class PublishDesk:
             raise PublishError(404, f"找不到发布包 {pack_id}")
         return dict(row)
 
+    @staticmethod
+    def _pack_meta(p: dict) -> dict:
+        from ..biz.executors.publish import _pack_meta
+        return _pack_meta(p.get("pack_dir"))
+
+    def set_pack_account(self, pack_id: str, key: str | None) -> dict:
+        """改发布包发到哪个号。key 空着 = 用这个平台的默认账号。发出去、存了草稿、不发的不能改。"""
+        from ..biz import db
+        pubs = _pubs()
+        p = self.pack_row(pack_id)
+        if p["status"] not in ACCOUNT_EDITABLE:
+            raise PublishError(409, f"{pack_id} 现在是「{p['status']}」，不能再改账号")
+        key = str(key or "").strip() or None
+        if key and (not pubs.is_account_key(key) or pubs.platform_of(key) != p["platform"] or key not in pubs.account_keys(p["platform"])):
+            raise PublishError(400, f"{key} 不是这个平台的账号")
+        ops = db.open_ops()
+        try:
+            ops.execute("UPDATE publish_packs SET account=?, updated_at=? WHERE id=?", (key, self._now(), pack_id))
+            ops.commit()
+        finally:
+            ops.close()
+        return {"ok": True, "account": key or pubs.default_account(p["platform"])}
+
     def pack(self, pack_id: str) -> dict:
         """发布包详情：给面板做预览、一键复制和人工发布用。"""
         from ..biz.executors.publish import _pack_meta, _per_platform, _publisher_mode
+        pubs = _pubs()
         p = self.pack_row(pack_id)
         meta = _pack_meta(p.get("pack_dir"))
         pm = _per_platform(meta, p["platform"])
@@ -283,21 +359,28 @@ class PublishDesk:
         if sd.is_dir():
             shots = [f.name for f in sorted(sd.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True) if f.suffix == ".png"][:6]
         topics = pm.get("topics") or meta.get("topics") or []
+        try:
+            acct, acct_err = pubs.pack_account(p, meta), None
+        except pubs.AccountError as e:
+            acct, acct_err = None, str(e)
         return {**{k: p.get(k) for k in ("id", "content_id", "platform", "status", "action_status", "approved_at", "scheduled_at", "updated_at")},
                 "mode": _publisher_mode(self._cfg(), p["platform"], meta), "is_test": bool(meta.get("is_test")), "test_note": meta.get("test_note"),
                 "title": pm.get("title") or p.get("title") or meta.get("title"), "body": pm.get("body") or meta.get("body") or "",
                 "topics": topics, "pinned_comment": pm.get("pinned_comment"), "ai_label": bool(pm.get("ai_label") or meta.get("ai_label")),
-                "account": pm.get("account") or p.get("account"), "channel_code": pm.get("channel_code") or meta.get("channel_code"),
+                "account": p.get("account") or pm.get("account"), "account_key": acct, "account_error": acct_err,
+                "account_label": pubs.account_label(acct) if acct else None, "account_editable": p["status"] in ACCOUNT_EDITABLE,
+                "account_choices": [{"key": k, "label": pubs.account_label(k), "default": k == pubs.default_account(p["platform"]),
+                                     "status": (_read_accounts().get(k) or {}).get("status") or "none"} for k in pubs.account_keys(p["platform"])],
+                "channel_code": pm.get("channel_code") or meta.get("channel_code"),
                 "cover": pm.get("cover") or media.get("cover"), "video": media.get("video"), "files": files, "shots": shots,
                 "duration_sec": (meta.get("media_info") or {}).get("duration_sec"), "orientation": (meta.get("media_info") or {}).get("orientation")}
 
-    def image_path(self, platform: str, kind: str) -> Path:
+    def image_path(self, key: str, kind: str) -> Path:
         """扫码登录的二维码（只在等扫码时给）和账号头像。"""
-        if platform not in _pubs().ACCOUNTS:
-            raise PublishError(400, f"不认识的平台 {platform}")
+        key = _key(key)
         q = self._qr()
-        f = q.qr_file(platform) if kind == "qr" else q.avatar_file(platform) if kind == "avatar" else None
-        if not f or not f.is_file() or (kind == "qr" and q.read_status(platform).get("state") != "qr_ready"):
+        f = q.qr_file(key) if kind == "qr" else q.avatar_file(key) if kind == "avatar" else None
+        if not f or not f.is_file() or (kind == "qr" and q.read_status(key).get("state") != "qr_ready"):
             raise PublishError(404, "没有这张图")
         return f
 

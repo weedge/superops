@@ -165,7 +165,7 @@ policy:
       name: 发布包
       instruction: 质检通过后为各平台生成发布包（标题、文案、话题、封面、发布时间建议）。只生成，不发布。
       when: {types: [content.qa.passed]}
-      run: {role: write, agent: claude, skill: ops-publish-pack, tools: workspace, timeout: 15m, context: [event_payload, event_scripts]}
+      run: {role: write, agent: claude, skill: ops-publish-pack, tools: workspace, timeout: 15m, context: [event_payload, event_scripts, social_accounts]}
       tell: never
       priority: 1
     - id: pack-register

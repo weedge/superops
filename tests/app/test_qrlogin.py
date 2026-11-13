@@ -180,3 +180,14 @@ def test_其他平台的登录判断和身份解析(q):
     assert q.logged_in("kuaishou", type("C", (), {"request": FakeReq({q.KUAISHOU_USER_API: {"result": 109}}), "pages": []})()) is False
     assert q.logged_in("wechat_oa", FakePages(["https://mp.weixin.qq.com/cgi-bin/home?t=home/index&token=123456&lang=zh_CN"])) is True
     assert q.logged_in("wechat_oa", FakePages(["https://mp.weixin.qq.com/", "https://evil.example/?token=1"])) is False
+
+
+def test_登录页被平台风控拦下_说清楚原因(q):
+    class Page:
+        def __init__(self, body):
+            self.body = body
+
+        def inner_text(self, sel, timeout=None):
+            return self.body
+    assert q.blocked(Page("安全限制\n当前网络存在风险，请切换可靠网络后重试\n300012")) == "当前网络存在风险，请切换可靠网络后重试"
+    assert q.blocked(Page("短信登录\n发送验证码")) == ""

@@ -1,7 +1,9 @@
-"""创作者后台自动发布（Playwright + 本机 Chrome + 每个平台独立的登录态目录）。
+"""创作者后台自动发布（Playwright + 本机 Chrome + 每个账号独立的登录态目录）。
 
-- 登录：`superops publish login <平台>` 打开有界面的 Chrome，人扫码登录，登录态存在
-  ~/popto-superops-data/browser-profiles/<平台>/，之后发布复用；
+- 账号：同一平台可以登多个号。每个号有一个账号键：主号就是平台名（douyin），后加的号是 douyin@2、douyin@3……
+  登录态存在 ~/popto-superops-data/browser-profiles/<账号键>/。每个平台有一个默认账号（不指定账号的发布、
+  评论引流、数据采集都用它），记在 browser-profiles/accounts.json 的 "_defaults" 里，没设过就是主号；
+- 登录：`superops publish login <账号键>` 打开有界面的 Chrome，人扫码登录，之后发布复用；
 - 发布：只由 executors/publish.py 在卡片批准后调用；每个发布包只发一次（ActionLedger）；
 - 试运行（dry_run）：上传、填文案都做，停在“发布”按钮前截图，不点发布；
 - 存草稿（draft）：上传、填文案都做，最后点平台的“保存草稿 / 暂存离开”，不点发布；人到草稿箱检查后自己发；
@@ -224,8 +226,141 @@ def ensure_h264(video: Path, out_dir: Path) -> tuple[Path, str | None]:
     return out, f"原片是 {codec} 编码，已转成 H.264 上传"
 
 
-def profile_dir(platform: str) -> Path:
-    d = paths.ops_data() / "browser-profiles" / platform
+# ── 账号键与账号登记（同一平台多个号） ──
+KEY_RE = re.compile(r"^([a-z_]+)(?:@([a-z0-9][a-z0-9-]{0,19}))?$")
+DEFAULTS = "_defaults"
+
+
+class AccountError(PublishError):
+    """发布包指定的账号认不出来（不在已登记的账号里）：不猜，转人工。"""
+
+
+def platform_of(key: str) -> str:
+    """账号键 → 平台：douyin@2 → douyin。"""
+    return str(key or "").split("@", 1)[0]
+
+
+def is_account_key(key: str) -> bool:
+    m = KEY_RE.match(str(key or ""))
+    return bool(m and m.group(1) in ACCOUNTS)
+
+
+def profiles_root() -> Path:
+    return paths.ops_data() / "browser-profiles"
+
+
+def registry_file() -> Path:
+    return profiles_root() / "accounts.json"
+
+
+def read_registry() -> dict:
+    """accounts.json：{账号键: {status, name, account_id, followers, nickname, …}, "_defaults": {平台: 账号键}}。"""
+    import json
+    try:
+        data = json.loads(registry_file().read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_registry(data: dict) -> None:
+    import json
+    f = registry_file()
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(f)
+
+
+def write_account(key: str, **fields) -> None:
+    data = read_registry()
+    data[key] = {**(data.get(key) or {}), **fields}
+    _save_registry(data)
+
+
+def forget_account(key: str) -> None:
+    """移除后加的号：登记删掉；它是默认账号的话，默认改回主号。"""
+    data = read_registry()
+    data.pop(key, None)
+    defaults = data.get(DEFAULTS) or {}
+    if defaults.get(platform_of(key)) == key:
+        defaults.pop(platform_of(key))
+    data[DEFAULTS] = defaults
+    _save_registry(data)
+
+
+def account_keys(platform: str) -> list[str]:
+    """这个平台的全部账号：主号在前，后加的号按序号。后加的号以登记为准，也认登录目录（登记丢了不会丢号）。"""
+    keys = {k for k in read_registry() if k != DEFAULTS and platform_of(k) == platform and is_account_key(k)}
+    root = profiles_root()
+    if root.is_dir():
+        keys |= {d.name for d in root.iterdir() if d.is_dir() and d.name.startswith(platform + "@") and is_account_key(d.name)}
+    keys.discard(platform)
+
+    def order(k: str):
+        slug = k.split("@", 1)[1]
+        return (0, int(slug), "") if slug.isdigit() else (1, 0, slug)
+    return [platform, *sorted(keys, key=order)]
+
+
+def default_account(platform: str) -> str:
+    key = (read_registry().get(DEFAULTS) or {}).get(platform)
+    return key if key and platform_of(key) == platform and key in account_keys(platform) else platform
+
+
+def set_default(key: str) -> None:
+    data = read_registry()
+    data[DEFAULTS] = {**(data.get(DEFAULTS) or {}), platform_of(key): key}
+    _save_registry(data)
+
+
+def next_account_key(platform: str) -> str:
+    used = set(account_keys(platform))
+    n = 2
+    while f"{platform}@{n}" in used:
+        n += 1
+    return f"{platform}@{n}"
+
+
+def account_label(key: str) -> str:
+    """给人看的账号名：平台 + 账号昵称（有备注名用备注名），后加的号没登录时用“2号”。"""
+    pf = platform_of(key)
+    label = ACCOUNTS.get(pf, {}).get("label", pf)
+    k = read_registry().get(key) or {}
+    who = k.get("nickname") or k.get("name")
+    if who:
+        return f"{label}「{who}」"
+    return label if key == pf else f"{label} {key.split('@', 1)[1]}号"
+
+
+def resolve_account(platform: str, want: str | None) -> str:
+    """发布包里写的账号 → 账号键。没写用默认账号；写的是账号键、账号名或备注名都认；认不出来抛 AccountError（不猜，转人工）。"""
+    want = str(want or "").strip().lstrip("@")
+    if not want:
+        return default_account(platform)
+    keys = account_keys(platform)
+    if want in keys:
+        return want
+    reg = read_registry()
+    hits = [k for k in keys if want in {str((reg.get(k) or {}).get(f) or "").strip() for f in ("name", "nickname", "account_id")} - {""}]
+    if len(hits) == 1:
+        return hits[0]
+    label = ACCOUNTS.get(platform, {}).get("label", platform)
+    raise AccountError(f"发布包指定的{label}账号「{want}」" + ("对上了不止一个号" if hits else "不在已登录的账号里") +
+                       "，没有自动发；请在面板发布包上选好账号后重试，或手动发")
+
+
+def pack_account(p: dict, meta: dict | None = None) -> str:
+    """发布包发到哪个号：面板改过的（publish_packs.account）优先，其次 meta 里这个平台写的，都没有用默认账号。"""
+    pm = {}
+    if meta:
+        from ..publish import _per_platform
+        pm = _per_platform(meta, p["platform"])
+    return resolve_account(p["platform"], p.get("account") or pm.get("account"))
+
+
+def profile_dir(key: str) -> Path:
+    d = profiles_root() / key
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -237,11 +372,11 @@ def shots_dir(pack_id: str) -> Path:
 
 
 @contextmanager
-def profile_lock(platform: str, wait_s: float = 600):
-    """按平台排队用登录态目录（跨进程文件锁）：发布、数据采集、登录检查不会同时开同一个平台的 Chrome。"""
+def profile_lock(key: str, wait_s: float = 600):
+    """按账号排队用登录态目录（跨进程文件锁）：发布、数据采集、登录检查不会同时开同一个号的 Chrome。"""
     import fcntl
 
-    lock = paths.ops_data() / "browser-profiles" / f".{platform}.lock"
+    lock = profiles_root() / f".{key}.lock"
     lock.parent.mkdir(parents=True, exist_ok=True)
     with open(lock, "a") as f:
         deadline = time.time() + max(0.0, wait_s)
@@ -251,7 +386,7 @@ def profile_lock(platform: str, wait_s: float = 600):
                 break
             except BlockingIOError:
                 if time.time() >= deadline:
-                    label = ACCOUNTS.get(platform, {}).get("label", platform)
+                    label = account_label(key)
                     raise ProfileBusy(f"{label}的浏览器正被别的任务占用（发布 / 数据采集 / 登录），等了 {int(wait_s)} 秒")
                 time.sleep(1)
         try:
@@ -261,13 +396,13 @@ def profile_lock(platform: str, wait_s: float = 600):
 
 
 @contextmanager
-def browser(platform: str, *, headless: bool = True, error_shots: Path | None = None, lock_wait: float = 600):
-    """本机 Chrome + 该平台的持久化登录态。出错时把当前页面截图到 error_shots（发给人看出错在哪一步）。"""
+def browser(key: str, *, headless: bool = True, error_shots: Path | None = None, lock_wait: float = 600):
+    """本机 Chrome + 这个账号（账号键，主号就是平台名）的持久化登录态。出错时把当前页面截图到 error_shots。"""
     from playwright.sync_api import sync_playwright
 
-    with profile_lock(platform, lock_wait), sync_playwright() as p:
+    with profile_lock(key, lock_wait), sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(
-            str(profile_dir(platform)), channel="chrome", headless=headless,
+            str(profile_dir(key)), channel="chrome", headless=headless,
             viewport={"width": 1440, "height": 900}, locale="zh-CN", timezone_id="Asia/Shanghai",
             args=["--disable-blink-features=AutomationControlled"],
         )
@@ -275,7 +410,7 @@ def browser(platform: str, *, headless: bool = True, error_shots: Path | None = 
             yield ctx
         except Exception as e:
             if error_shots and ctx.pages:
-                shot = error_shots / f"{platform}-{stamp()}-error.png"
+                shot = error_shots / f"{key}-{stamp()}-error.png"
                 try:
                     ctx.pages[-1].screenshot(path=str(shot))
                     e.screenshot = str(shot)  # type: ignore[attr-defined]
@@ -376,11 +511,12 @@ def is_logged_in(platform: str, url: str, cookies: list[dict] | None = None) -> 
     return True
 
 
-def login(platform: str, timeout_s: int = 300) -> bool:
-    """打开有界面的 Chrome 让人扫码；登录成功（跳到后台首页）后保存登录态并关闭。"""
+def login(key: str, timeout_s: int = 300) -> bool:
+    """打开有界面的 Chrome 让人扫码；登录成功（跳到后台首页）后保存登录态并关闭。key 是账号键。"""
     from .qrlogin import logged_in
+    platform = platform_of(key)
     cfg = ACCOUNTS[platform]
-    with browser(platform, headless=False) as ctx:
+    with browser(key, headless=False) as ctx:
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto(cfg["login"], wait_until="domcontentloaded")
         deadline = time.time() + timeout_s
@@ -405,10 +541,10 @@ DRAFTS = {
 DOUYIN_PENDING = "你还有上次未发布的视频"
 
 
-def open_drafts(platform: str, timeout_s: int = 3600) -> None:
-    """打开有界面的专用 Chrome，停在这个平台的草稿位置，人检查、点发布；人关掉窗口（或 1 小时）后结束。"""
-    spot = DRAFTS[platform]
-    with browser(platform, headless=False) as ctx:
+def open_drafts(key: str, timeout_s: int = 3600) -> None:
+    """打开这个号的有界面专用 Chrome，停在平台的草稿位置，人检查、点发布；人关掉窗口（或 1 小时）后结束。"""
+    spot = DRAFTS[platform_of(key)]
+    with browser(key, headless=False) as ctx:
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto(spot["url"], wait_until="domcontentloaded", timeout=90000)
         if spot.get("click"):
@@ -424,10 +560,11 @@ def open_drafts(platform: str, timeout_s: int = 3600) -> None:
                 break
 
 
-def check_login(platform: str) -> tuple[bool, str]:
-    """无界面打开后台首页，看会不会被踢回登录页。"""
+def check_login(key: str) -> tuple[bool, str]:
+    """无界面打开后台首页，看会不会被踢回登录页。key 是账号键（主号就是平台名）。"""
+    platform = platform_of(key)
     cfg = PLATFORMS[platform]
-    with browser(platform) as ctx:
+    with browser(key) as ctx:
         page = ctx.new_page()
         page.goto(cfg["home"], wait_until="commit", timeout=90000)
         page.wait_for_timeout(6000)
@@ -448,8 +585,12 @@ def payload_for(p: dict, meta: dict) -> dict:
 
     def f(name):
         return str(d / name) if d and name and (d / name).is_file() else None
+    try:
+        account, account_error = pack_account(p, meta), None
+    except AccountError as e:
+        account, account_error = None, str(e)
     return {
-        "pack_id": p["id"], "platform": p["platform"],
+        "pack_id": p["id"], "platform": p["platform"], "account": account, "account_error": account_error,
         "video": f(media.get("video")), "cover": f(pm.get("cover") or media.get("cover")),
         "cover_horizontal": f(pm.get("cover_horizontal") or media.get("cover_horizontal")),
         "scheduled_at": pm.get("scheduled_at") or p.get("scheduled_at") or meta.get("scheduled_at"),
@@ -482,6 +623,8 @@ def run(p: dict, meta: dict, *, dry_run: bool, headless: bool = True, draft: boo
     if not mod:
         raise PublishError(f"{p['platform']} 还没有自动发布器")
     pl = payload_for(p, meta)
+    if pl["account_error"]:
+        raise AccountError(pl["account_error"])
     if pl["is_test"] and not dry_run:
         raise PublishError("测试内容不允许真发布（meta.is_test=true），只能试运行")
     if draft and not dry_run:

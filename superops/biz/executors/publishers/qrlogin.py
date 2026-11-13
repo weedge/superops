@@ -1,12 +1,12 @@
 """网页里扫码登录各平台创作者后台（参照 Easel 的账号登录）：无界面打开登录页，把二维码截成图给面板显示，
 人用手机 App 扫；抖音风控要短信验证时，面板弹输入框，人填的验证码经文件交给这里填进去。登录成功后顺手读出账号昵称和头像。
 
-状态都落在 ~/popto-superops-data/publish-login/：
-  <平台>.json   {state, message, at, phone?, name?}；state：starting 准备中 / qr_ready 请扫码 / scanned 已扫码 /
+状态都落在 ~/popto-superops-data/publish-login/，按账号键分开（主号就是平台名，后加的号如 douyin@2）：
+  <账号键>.json   {state, message, at, phone?, name?}；state：starting 准备中 / qr_ready 请扫码 / scanned 已扫码 /
                 sms_required 要短信验证码 / verifying 验证中 / success 登录成功 / expired 过期 / error 出错 / cancelled 取消
-  <平台>.png    当前有效的二维码（抖音码一两分钟就过期，这里每几秒重截一次，过期就点刷新）
-  <平台>.code   面板写进来的短信验证码，读走就删
-  <平台>-avatar.<扩展名>  账号头像（下载到本地，面板不直接加载外网图片）
+  <账号键>.png  当前有效的二维码（抖音码一两分钟就过期，这里每几秒重截一次，过期就点刷新）
+  <账号键>.code 面板写进来的短信验证码，读走就删
+  <账号键>-avatar.<扩展名>  账号头像（下载到本地，面板不直接加载外网图片）
 
 找码、判断已扫码 / 过期、短信验证的写法移植自 Easel（skills/shared/scripts 的 douyin_publish.py、xhs_publish.py、
 web_publisher.py），只保留这三个平台、接到我们自己的登录目录和跨进程锁上（publishers.browser）。
@@ -22,7 +22,7 @@ from urllib.parse import urlparse
 
 from ... import paths
 from ...timeutil import iso
-from . import ACCOUNTS, PLATFORMS, browser, is_logged_in
+from . import ACCOUNTS, PLATFORMS, browser, is_account_key, is_logged_in, platform_of
 
 LOGIN_TIMEOUT_S = 240
 TERMINAL = ("success", "expired", "error", "cancelled")
@@ -73,21 +73,26 @@ def state_dir() -> Path:
     return d
 
 
-def status_file(pf: str) -> Path:
-    return state_dir() / f"{pf}.json"
+def status_file(key: str) -> Path:
+    return state_dir() / f"{key}.json"
 
 
-def qr_file(pf: str) -> Path:
-    return state_dir() / f"{pf}.png"
+def qr_file(key: str) -> Path:
+    return state_dir() / f"{key}.png"
 
 
-def code_file(pf: str) -> Path:
-    return state_dir() / f"{pf}.code"
+def code_file(key: str) -> Path:
+    return state_dir() / f"{key}.code"
 
 
-def avatar_file(pf: str) -> Path | None:
-    hits = sorted(state_dir().glob(f"{pf}-avatar.*"), key=lambda f: f.stat().st_mtime, reverse=True)
+def avatar_file(key: str) -> Path | None:
+    hits = sorted(state_dir().glob(f"{key}-avatar.*"), key=lambda f: f.stat().st_mtime, reverse=True)
     return hits[0] if hits else None
+
+
+def account_files(key: str) -> list[Path]:
+    """这个号的全部状态文件（状态、二维码、验证码、头像）。按名字精确匹配：douyin 不会带上 douyin@2 的。"""
+    return [f for f in state_dir().iterdir() if f.is_file() and f.name.split(".", 1)[0] in (key, f"{key}-avatar")]
 
 
 def _atomic(path: Path, data: bytes) -> None:
@@ -491,8 +496,8 @@ def _watch_channels(ctx) -> dict:
     return seen
 
 
-def identity(pf: str, ctx, page, seen: dict | None = None) -> dict:
-    """{name, avatar, id, followers}：读不到的字段是空的（不影响“已登录”的结论）。"""
+def identity(pf: str, ctx, page, seen: dict | None = None, key: str | None = None) -> dict:
+    """{name, avatar, id, followers}：读不到的字段是空的（不影响“已登录”的结论）。key 是账号键（头像按它存），不给就是主号。"""
     got = None
     try:
         if pf == "douyin":
@@ -534,33 +539,34 @@ def identity(pf: str, ctx, page, seen: dict | None = None) -> dict:
         got = None
     got = {"name": "", "avatar": "", "id": None, "followers": None, **(got or {})}
     if got["avatar"]:
-        _save_avatar(pf, ctx, got["avatar"])
+        _save_avatar(key or pf, ctx, got["avatar"])
     return got
 
 
-def _save_avatar(pf: str, ctx, url: str) -> None:
+def _save_avatar(key: str, ctx, url: str) -> None:
     try:
         r = ctx.request.get(url, timeout=15000)
         kind = (r.headers.get("content-type") or "").split(";")[0].strip()
         ext = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif"}.get(kind)
         body = r.body()
         if r.status == 200 and ext and 0 < len(body) < 2 << 20:
-            for old in state_dir().glob(f"{pf}-avatar.*"):
+            for old in state_dir().glob(f"{key}-avatar.*"):
                 old.unlink(missing_ok=True)
-            _atomic(state_dir() / f"{pf}-avatar.{ext}", body)
+            _atomic(state_dir() / f"{key}-avatar.{ext}", body)
     except Exception:  # noqa: BLE001
         pass
 
 
-def whoami(pf: str) -> dict:
-    """无界面打开后台首页：登没登录（会不会被踢回登录页）+ 账号昵称、头像。给“校验账号”用。"""
-    with browser(pf, lock_wait=60) as ctx:
+def whoami(key: str) -> dict:
+    """无界面打开后台首页：登没登录（会不会被踢回登录页）+ 账号昵称、头像。给“校验账号”用。key 是账号键（主号就是平台名）。"""
+    pf = platform_of(key)
+    with browser(key, lock_wait=60) as ctx:
         seen = _watch_channels(ctx) if pf == "wechat_channels" else None
         page = ctx.new_page()
         page.goto(ACCOUNTS[pf]["home"], wait_until="commit", timeout=90000)
         page.wait_for_timeout(6000)
         ok = logged_in(pf, ctx)
-        who = identity(pf, ctx, page, seen) if ok else {"name": "", "avatar": "", "id": None, "followers": None}
+        who = identity(pf, ctx, page, seen, key) if ok else {"name": "", "avatar": "", "id": None, "followers": None}
         return {"logged_in": ok, "url": page.url, **who}
 
 
@@ -636,41 +642,58 @@ def _fill_code(page, code: str) -> bool:
     return True
 
 
-def douyin_sms(pf: str, ctx, page, deadline: float) -> bool:
+def douyin_sms(key: str, ctx, page, deadline: float) -> bool:
     """选“接收短信验证码” → 点“获取验证码” → 等面板填码 → 填进去提交 → 成功 / 码错了让人重输 / 超时。"""
-    take_code(pf)
-    write_status(pf, "scanned", "扫码成功，平台要求短信验证，正在准备……")
+    take_code(key)
+    write_status(key, "scanned", "扫码成功，平台要求短信验证，正在准备……")
     if _click_first(page, DOUYIN_SMS_RECEIVE):
         page.wait_for_timeout(1800)
     _click_first(page, DOUYIN_SMS_SEND)
     m = re.search(r"1\d{2}[*\s]{2,}\d{2,4}", page.inner_text("body") or "")
     phone = m.group(0) if m else ""
-    write_status(pf, "sms_required", "验证码已发到绑定的手机" + (f"（{phone}）" if phone else "") + "，请在下面输入", phone=phone)
+    write_status(key, "sms_required", "验证码已发到绑定的手机" + (f"（{phone}）" if phone else "") + "，请在下面输入", phone=phone)
     while time.time() < deadline:
-        if logged_in(pf, ctx):
+        if logged_in("douyin", ctx):
             return True
-        if read_status(pf).get("state") == "cancelled":
+        if read_status(key).get("state") == "cancelled":
             return False
-        code = take_code(pf)
+        code = take_code(key)
         if not code:
             page.wait_for_timeout(1500)
             continue
-        write_status(pf, "verifying", "正在验证……", phone=phone)
+        write_status(key, "verifying", "正在验证……", phone=phone)
         _fill_code(page, code)
         until = min(deadline, time.time() + 30)
         while time.time() < until:
-            if logged_in(pf, ctx):
+            if logged_in("douyin", ctx):
                 return True
             body = page.inner_text("body") or ""
             bad = next((w for w in DOUYIN_SMS_ERROR if w in body), "")
             if bad:
                 break
             page.wait_for_timeout(1200)
-        write_status(pf, "sms_required", f"{bad or '还没验证通过'}，请重新输入验证码（可以等一会儿让平台重发）", phone=phone)
+        write_status(key, "sms_required", f"{bad or '还没验证通过'}，请重新输入验证码（可以等一会儿让平台重发）", phone=phone)
     return False
 
 
 # ───────────────────────── 扫码登录 ─────────────────────────
+
+RISK_WORDS = ("当前网络存在风险", "安全限制", "访问频繁", "操作频繁", "环境异常", "存在安全风险")
+
+
+def blocked(page) -> str:
+    """登录页被平台风控拦下时（小红书“安全限制：当前网络存在风险”这类），返回页面上那句话；没有返回空串。"""
+    try:
+        body = page.inner_text("body", timeout=3000) or ""
+    except Exception:  # noqa: BLE001
+        return ""
+    for w in RISK_WORDS:
+        i = body.find(w)
+        if i >= 0:
+            line = next((ln.strip() for ln in body[i:].splitlines() if ln.strip()), w)
+            return line[:40]
+    return ""
+
 
 def _open_login(pf: str, page) -> None:
     if pf == "douyin":
@@ -715,68 +738,73 @@ def _open_login(pf: str, page) -> None:
             pass
 
 
-def _success(pf: str, ctx, page, seen) -> dict:
+def _success(key: str, ctx, page, seen) -> dict:
     page.wait_for_timeout(3000)          # 让 Cookie 落盘
-    who = identity(pf, ctx, page, seen)
-    _clear(pf)
-    write_status(pf, "success", f"登录成功{('：' + who['name']) if who.get('name') else ''}", name=who.get("name") or "")
+    who = identity(platform_of(key), ctx, page, seen, key)
+    _clear(key)
+    write_status(key, "success", f"登录成功{('：' + who['name']) if who.get('name') else ''}", name=who.get("name") or "")
     return {"logged_in": True, **who}
 
 
-def run(pf: str, timeout_s: int = LOGIN_TIMEOUT_S) -> dict:
-    """无界面扫码登录。返回 {logged_in, name, avatar, ...}；过程中的每一步写进状态文件给面板轮询。"""
-    if pf not in ACCOUNTS:
-        raise ValueError(f"不认识的平台 {pf}")
+def run(key: str, timeout_s: int = LOGIN_TIMEOUT_S) -> dict:
+    """无界面扫码登录 key 这个号（账号键：主号就是平台名，后加的号如 douyin@2）。
+    返回 {logged_in, name, avatar, ...}；过程中的每一步写进这个号的状态文件给面板轮询。"""
+    pf = platform_of(key)
+    if not is_account_key(key):
+        raise ValueError(f"不认识的账号 {key}")
     label, app = ACCOUNTS[pf]["label"], ACCOUNTS[pf]["app"]
-    _clear(pf)
-    write_status(pf, "starting", "正在打开登录页、准备二维码……")
+    _clear(key)
+    write_status(key, "starting", "正在打开登录页、准备二维码……")
     try:
-        with browser(pf, lock_wait=15) as ctx:
+        with browser(key, lock_wait=15) as ctx:
             seen = _watch_channels(ctx) if pf == "wechat_channels" else None
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             _open_login(pf, page)
             if logged_in(pf, ctx):
-                return _success(pf, ctx, page, seen)
+                return _success(key, ctx, page, seen)
             qr, until = None, time.time() + 25
             while time.time() < until and not qr:
                 qr = find_qr(pf, page)
                 if qr or (pf == "douyin" and douyin_wall(page)) or logged_in(pf, ctx):
                     break
                 page.wait_for_timeout(1000)
-            if qr and _shot(page, qr, qr_file(pf), pad=8, part=_white_part(qr) if pf == "wechat_channels" else None):
-                write_status(pf, "qr_ready", f"用{app}扫码登录{label}")
+            if qr and _shot(page, qr, qr_file(key), pad=8, part=_white_part(qr) if pf == "wechat_channels" else None):
+                write_status(key, "qr_ready", f"用{app}扫码登录{label}")
             elif not logged_in(pf, ctx) and not (pf == "douyin" and douyin_wall(page)):
-                write_status(pf, "error", "登录页上没找到二维码（可能是网络慢、被平台拦截或页面改版），可以关掉重试，或在这台 Mac 上用窗口登录")
+                risk = blocked(page)
+                write_status(key, "error", f"{label}提示「{risk}」：平台风控（多半是短时间里多次打开登录页），先等一两个小时再试，"
+                             "别反复点；急的话在这台 Mac 上用窗口登录" if risk else
+                             "登录页上没找到二维码（可能是网络慢、被平台拦截或页面改版），可以关掉重试，或在这台 Mac 上用窗口登录")
                 return {"logged_in": False}
             deadline, last_shot, scanned = time.time() + timeout_s, time.time(), False
             while time.time() < deadline:
-                if read_status(pf).get("state") == "cancelled":
+                if read_status(key).get("state") == "cancelled":
                     return {"logged_in": False}
                 if logged_in(pf, ctx):
-                    return _success(pf, ctx, page, seen)
+                    return _success(key, ctx, page, seen)
                 if pf == "douyin" and douyin_wall(page):
-                    if douyin_sms(pf, ctx, page, deadline):
-                        return _success(pf, ctx, page, seen)
-                    if read_status(pf).get("state") != "cancelled":
-                        write_status(pf, "error", "短信验证超时没完成（没输入、多次输错或已过期），请重试")
+                    if douyin_sms(key, ctx, page, deadline):
+                        return _success(key, ctx, page, seen)
+                    if read_status(key).get("state") != "cancelled":
+                        write_status(key, "error", "短信验证超时没完成（没输入、多次输错或已过期），请重试")
                     return {"logged_in": False}
                 st = qr_state(pf, page) or ("scanned" if pf == "douyin" and find_qr(pf, page) is None and time.time() - last_shot > 3 else "")
                 if st == "scanned" and not scanned:
                     scanned = True
-                    write_status(pf, "scanned", "扫码成功，请在手机上确认登录")
+                    write_status(key, "scanned", "扫码成功，请在手机上确认登录")
                 if not scanned and (st == "expired" or time.time() - last_shot > 8):
                     if st == "expired":
                         refresh_qr(pf, page)
                     q = find_qr(pf, page)
-                    if q and _shot(page, q, qr_file(pf), pad=8, part=_white_part(q) if pf == "wechat_channels" else None):
-                        write_status(pf, "qr_ready", "二维码已刷新，请扫码" if st == "expired" else read_status(pf).get("message", ""))
+                    if q and _shot(page, q, qr_file(key), pad=8, part=_white_part(q) if pf == "wechat_channels" else None):
+                        write_status(key, "qr_ready", "二维码已刷新，请扫码" if st == "expired" else read_status(key).get("message", ""))
                     last_shot = time.time()
                 page.wait_for_timeout(1500)
-            write_status(pf, "error" if scanned else "expired",
+            write_status(key, "error" if scanned else "expired",
                          "已扫码，但没等到登录完成：请确认手机上点了同意，再重试" if scanned else "二维码超时没扫，关掉重新登录")
             return {"logged_in": False}
     except Exception as e:  # noqa: BLE001  任何异常都要落一个终态，面板才不会一直转圈
         from . import ProfileBusy
         msg = str(e) if isinstance(e, ProfileBusy) else f"登录中断：{type(e).__name__}：{str(e).splitlines()[0][:160] if str(e) else ''}"
-        write_status(pf, "error", msg)
+        write_status(key, "error", msg)
         return {"logged_in": False, "error": msg}

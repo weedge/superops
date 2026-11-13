@@ -116,7 +116,7 @@ uv run superops inbox
 
 | 要准备的 | 谁用得到 | 怎么准备 | 放在哪 |
 | --- | --- | --- | --- |
-| 抖音 / 视频号 / 小红书创作者后台登录 | 执行已批准的发布（自动发布、试运行、存草稿）；到点的指标快照和手动采集（读创作者后台，复用同一份登录态）；线索跟进并发评论（抖音） | `superops publish login douyin`（`wechat_channels`、`xiaohongshu` 同理）：打开有界面的 Chrome，人扫码 | `~/popto-superops-data/browser-profiles/<平台>/` |
+| 抖音 / 视频号 / 小红书创作者后台登录 | 执行已批准的发布（自动发布、试运行、存草稿）；到点的指标快照和手动采集（读创作者后台，复用同一份登录态）；线索跟进并发评论（抖音） | 面板“内容 → 账号”扫码，或 `superops publish login douyin`（`wechat_channels`、`xiaohongshu` 同理）：打开有界面的 Chrome，人扫码。同一平台可以加多个号（面板“添加账号”，账号键 `douyin@2`…），不指定账号的发布、评论引流、登录检查用这个平台的默认账号 | `~/popto-superops-data/browser-profiles/<账号键>/`（主号的账号键就是平台名） |
 | Agent 专用浏览器登录 | 社媒监听的浏览器补位（知乎、B站、搜狗微信）、GEO 检查 | `superops browse install`，再 `superops browse login`（建议用专门的小号） | `~/popto-superops-data/browser-profiles/agent-browse/` |
 | TikHub 密钥 | 社媒监听（接口：搜作品、按人群词找人、补粉丝数）；评论采集；抖音指标读不到后台时的兜底 | `security add-generic-password -s popto-ops/tikhub -a popto-ops -w <key>` | 钥匙串 |
 | GitLab 令牌（机器人账号，api 权限） | 接入了仓库（`ci.projects` 非空）时的 CI 轮询、MR 审查与写回、合并闸门、合并、开发工单的推送和开 MR | `security add-generic-password -s popto-ops/gitlab -a popto-ops -w <token>` | 钥匙串 |

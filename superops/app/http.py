@@ -316,11 +316,14 @@ def leads_action(rt, body: dict) -> dict:
 
 def publish_packs_action(rt, body: dict) -> dict:
     """approve：等于在群里批了发布卡片——发出带人工批准凭据的 content.publish.approved，按各平台的发布模式执行；
-    record：人在平台上发完了，补登记（可带作品链接）；try / retry：交给发布台的子进程。"""
+    record：人在平台上发完了，补登记（可带作品链接）；try / retry：交给发布台的子进程；
+    account：改发到哪个号（account 是账号键，空着 = 这个平台的默认账号）。"""
     from ..core.model import now_iso
     desk, action, by = _desk(rt), str(body.get("action") or ""), str(body.get("by") or "panel")
     if action in ("try", "retry"):
         return _publish_call(desk.start, action, str(body.get("id") or ""), by=by)
+    if action == "account":
+        return _publish_call(desk.set_pack_account, str(body.get("id") or ""), body.get("account"))
     if action == "record":
         pid = str(body.get("id") or "")
         p = _publish_call(desk.pack_row, pid)
@@ -352,9 +355,16 @@ def publish_packs_action(rt, body: dict) -> dict:
 
 
 def publish_accounts_action(rt, body: dict) -> dict:
-    """check / qrlogin / login / open：交给发布台的子进程（qrlogin 无界面扫码，二维码在面板里显示）；code：扫码中平台要短信验证码时
-    把人填的码交给登录进程；cancel：关掉扫码弹窗，停掉登录进程；logout：登录目录挪到回收处；rename：给这个平台的号记个备注名。"""
-    desk, action, pf = _desk(rt), str(body.get("action") or ""), str(body.get("platform") or "")
+    """账号动作，对象是账号键 key（主号就是平台名，后加的号如 douyin@2；老的 platform 字段也认）。
+    check / qrlogin / login / open：交给发布台的子进程（qrlogin 无界面扫码，二维码在面板里显示）；code：扫码中平台要短信验证码时
+    把人填的码交给登录进程；cancel：关掉扫码弹窗，停掉登录进程；logout：登录目录挪到回收处（后加的号就是移除）；
+    rename：给这个号记个备注名；add：给 platform 这个平台再加一个号（直接开始扫码）；default：设为这个平台的默认账号。"""
+    desk, action = _desk(rt), str(body.get("action") or "")
+    pf = str(body.get("key") or body.get("platform") or "")
+    if action == "add":
+        return _publish_call(desk.add_account, str(body.get("platform") or ""), by=str(body.get("by") or "panel"))
+    if action == "default":
+        return _publish_call(desk.set_default, pf)
     if action == "code":
         return _publish_call(desk.submit_code, pf, str(body.get("code") or ""))
     if action == "cancel":
@@ -363,8 +373,8 @@ def publish_accounts_action(rt, body: dict) -> dict:
         return _publish_call(desk.logout, pf)
     if action == "rename":
         from .publishing import _write_account
-        if pf not in {a["platform"] for a in desk.accounts()}:
-            raise ApiError(400, f"不认识的平台 {pf}")
+        if pf not in {a["key"] for a in desk.accounts()}:
+            raise ApiError(400, f"不认识的账号 {pf}")
         _write_account(pf, nickname=str(body.get("name") or "").strip()[:40] or None)
         return {"ok": True}
     return _publish_call(desk.start, action, pf, by=str(body.get("by") or "panel"))
@@ -421,8 +431,8 @@ def handle_get(rt, path: str, q: dict) -> dict | list:
         return rt.store.receipts.list(status=q.get("status") or None, limit=int(q.get("limit", 60)))
     if path == "/api/publish":
         return publish_overview(rt)
-    if path == "/api/publish/login":    # 扫码登录的实时状态：?platform=
-        return _publish_call(_desk(rt).login_status, str(q.get("platform") or ""))
+    if path == "/api/publish/login":    # 扫码登录的实时状态：?key=<账号键>（老的 ?platform= 也认）
+        return _publish_call(_desk(rt).login_status, str(q.get("key") or q.get("platform") or ""))
     if path == "/api/publish/pack":
         return _publish_call(_desk(rt).pack, str(q.get("id") or ""))
     if path == "/api/business":
@@ -595,7 +605,7 @@ def make_handler(rt, token: str | None):
                 if not write and url.path == "/api/publish/image":     # 扫码登录的二维码、账号头像：?platform=&kind=qr|avatar
                     from .publishing import content_type
                     q = {k: v[-1] for k, v in parse_qs(url.query).items()}
-                    f = _publish_call(_desk(rt).image_path, str(q.get("platform") or ""), str(q.get("kind") or ""))
+                    f = _publish_call(_desk(rt).image_path, str(q.get("key") or q.get("platform") or ""), str(q.get("kind") or ""))
                     self._send(200, f.read_bytes(), content_type(f))
                     return
                 if not write and url.path == "/api/publish/media":     # 发布包里的封面 / 视频 / 截图：面板预览和下载

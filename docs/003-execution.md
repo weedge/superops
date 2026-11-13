@@ -24,7 +24,7 @@
 
 ## 两种执行器
 
-工单命中的规则决定谁来执行（`run.executor`）。明确请求的工单没有规则，用 `policy.yaml` 里 `executor.default` 的 Agent 执行方式。默认的上下文里带着社媒账号清单（`social_accounts`：superops 管的各平台创作者后台登录状态、账号名、粉丝数、能不能自动发布），人问“现在绑了哪些号 / 哪个号掉线了”时能直接回答。
+工单命中的规则决定谁来执行（`run.executor`）。明确请求的工单没有规则，用 `policy.yaml` 里 `executor.default` 的 Agent 执行方式。默认的上下文里带着社媒账号清单（`social_accounts`：superops 管的各平台创作者后台登录状态、账号名、粉丝数、能不能自动发布；同一平台多个号时每个号一行，标出默认账号），人问“现在绑了哪些号 / 哪个号掉线了”时能直接回答。
 
 | | agent | script |
 | --- | --- | --- |

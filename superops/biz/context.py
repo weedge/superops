@@ -202,35 +202,34 @@ class ContextBuilder:
     def p_social_accounts(self, lease, events):
         """superops 发布台管着的各平台社媒账号（创作者后台的登录）：登没登、是哪个号、能不能自动发布。
         明确请求的工单默认带上，人问“现在绑了哪些号 / 哪个号掉线了”时直接答。只给状态，不给登录态本身。"""
-        import json as _json
-
         from .config import load_agents_config
-        from .executors.publishers import ACCOUNTS
+        from .executors.publishers import ACCOUNTS, account_keys, default_account, profiles_root, read_registry
         from .executors.publishers.qrlogin import read_status
-        base = paths.ops_data() / "browser-profiles"
-        try:
-            known = _json.loads((base / "accounts.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            known = {}
+        known = read_registry()
         modes = load_agents_config().get("publishers") or {}
         status_text = {"ok": "已登录", "expired": "登录失效", "unknown": "没校验过", "none": "没登录"}
         rows = []
         for pf, meta in ACCOUNTS.items():
-            k = known.get(pf) or {}
-            prof = base / pf
-            st = k.get("status") or ("unknown" if prof.exists() and any(prof.iterdir()) else "none")
-            login = read_status(pf).get("state")
-            rows.append({"platform": pf, "label": meta["label"], "status": st, "status_text": status_text.get(st, st),
-                         "name": k.get("name"), "remark": k.get("nickname"), "account_id": k.get("account_id"), "followers": k.get("followers"),
-                         "checked_at": k.get("checked_at"), "logged_in_at": k.get("logged_in_at"), "note": k.get("note"),
-                         "can_auto_publish": bool(meta.get("publish")),
-                         "publish_mode": ((modes.get(pf) or {}).get("mode") or "off") if meta.get("publish") else None,
-                         "qr_login_in_progress": login in ("starting", "qr_ready", "scanned", "sms_required", "verifying")})
+            default = default_account(pf)
+            for key in account_keys(pf):
+                k = known.get(key) or {}
+                prof = profiles_root() / key
+                st = k.get("status") or ("unknown" if prof.exists() and any(prof.iterdir()) else "none")
+                login = read_status(key).get("state")
+                rows.append({"account_key": key, "platform": pf, "label": meta["label"], "is_default": key == default,
+                             "status": st, "status_text": status_text.get(st, st),
+                             "name": k.get("name"), "remark": k.get("nickname"), "account_id": k.get("account_id"), "followers": k.get("followers"),
+                             "checked_at": k.get("checked_at"), "logged_in_at": k.get("logged_in_at"), "note": k.get("note"),
+                             "can_auto_publish": bool(meta.get("publish")),
+                             "publish_mode": ((modes.get(pf) or {}).get("mode") or "off") if meta.get("publish") else None,
+                             "qr_login_in_progress": login in ("starting", "qr_ready", "scanned", "sms_required", "verifying")})
         self._write("social_accounts.json", {"accounts": rows, "note": (
-            "这是 superops 发布台自己管的各平台创作者后台登录（每个平台一个专用 Chrome 登录目录、一个号），不是 Popto 产品里用户绑定的账号。"
+            "这是 superops 发布台自己管的各平台创作者后台登录（每个号一个专用 Chrome 登录目录），不是 Popto 产品里用户绑定的账号。"
+            "同一平台可以有多个号：account_key 是账号键（主号就是平台名，后加的号如 douyin@2），is_default 是这个平台的默认账号——"
+            "发布包不写 account 就发到默认账号；要发到别的号，在发布包 meta 的 per_platform.<平台>.account 写账号键或账号名。"
             "status 以最近一次扫码登录 / 校验账号为准（checked_at）；要确认是否还登着，请人在面板“业务 → 内容 → 账号”点“校验账号”。"
             "can_auto_publish=false 的平台只管账号，发布走人工路径。")},
-            "社媒账号：superops 管的各平台创作者后台登录状态、账号名、粉丝数、能否自动发布")
+            "社媒账号：superops 管的各平台创作者后台登录状态、账号名、粉丝数、默认账号、能否自动发布")
 
     def p_listening_terms(self, lease, events):
         from .ingest import sync_terms

@@ -127,18 +127,26 @@ def save_snapshot(ops, post: dict, cp: str, m: dict, source: str, raw_ref: str |
     return evs
 
 
+def post_account(j: dict) -> str:
+    """作品是哪个号发的（账号键）：没记账号的（多账号之前发的）都是主号。"""
+    from ..executors.publishers import is_account_key, platform_of
+    a = str(j.get("account") or "")
+    return a if is_account_key(a) and platform_of(a) == j["platform"] else j["platform"]
+
+
 def creator_pass(ops, due: list[dict]) -> tuple[dict[str, dict], dict[str, str], dict[str, str]]:
     """自有作品读创作者后台（有真实播放量），每个平台开一次浏览器取完。
-    返回 ({post_id: 指标}, {平台: 没取到的原因}, {按标题对上的 post_id: 补登记的作品 ID})。"""
+    返回 ({post_id: 指标}, {账号键: 没取到的原因}, {按标题对上的 post_id: 补登记的作品 ID})。"""
     from . import creator
 
     got: dict[str, dict] = {}
     errs: dict[str, str] = {}
     linked: dict[str, str] = {}
-    for platform in creator.PLATFORMS:
-        posts = {j["pid"]: j for j in due if j["platform"] == platform}
-        if not posts:
-            continue
+    groups: dict[tuple[str, str], dict] = {}        # 同一平台多个号：按 (平台, 账号) 各开一次浏览器
+    for j in due:
+        if j["platform"] in creator.PLATFORMS:
+            groups.setdefault((j["platform"], post_account(j)), {})[j["pid"]] = j
+    for (platform, key), posts in groups.items():
         want = {creator.norm_id(platform, j["platform_post_id"]) for j in posts.values()
                 if creator.looks_like_id(platform, j["platform_post_id"])}
         unknown = [j for j in posts.values() if not creator.looks_like_id(platform, j["platform_post_id"])]
@@ -146,10 +154,10 @@ def creator_pass(ops, due: list[dict]) -> tuple[dict[str, dict], dict[str, str],
         if unknown:   # 只按标题找时，翻到比最早那条再早 3 天为止
             since = min(parse_iso(j["published_at"]) for j in unknown) - timedelta(days=3)
         try:
-            works = creator.list_works(platform, want, since=since)
+            works = creator.list_works(platform, want, since=since, **({"account": key} if key != platform else {}))
         except Exception as e:  # noqa: BLE001
             from ..executors.publishers import friendly_error
-            errs[platform] = friendly_error(e)
+            errs[key] = friendly_error(e)
             continue
         by_id = {w["id"]: w for w in works}
         taken = {creator.norm_id(platform, r[0]) for r in ops.execute(
@@ -178,8 +186,8 @@ def _snapshot_one(ops, j: dict, cp: str, creator: dict, creator_errs: dict, link
         if budget and used + th.requests >= budget:
             raise RuntimeError("TikHub 今日请求预算已用完")
         return save_snapshot(ops, post, cp, th.douyin_video_stats(ppid), "tikhub")
-    if j["platform"] in creator_errs:
-        raise RuntimeError(f"创作者后台没取到：{creator_errs[j['platform']]}")
+    if post_account(j) in creator_errs:
+        raise RuntimeError(f"创作者后台没取到：{creator_errs[post_account(j)]}")
     if j["platform"] in ("douyin", "wechat_channels", "xiaohongshu"):
         raise LookupError("创作者后台作品列表里没找到这条（作品 ID、标题都没对上）")
     raise LookupError("该平台没有可用的自动采集源，需要创作者后台导出或截图识别")
@@ -209,7 +217,7 @@ def cmd_collect() -> None:
     hub = hub_client()
     th, budget, used = _tikhub(cfg, hub)
     due = db.rows(ops.execute(
-        "SELECT j.*, p.platform, p.platform_post_id, p.title, p.published_at, p.id AS pid FROM metric_jobs j"
+        "SELECT j.*, p.platform, p.account, p.platform_post_id, p.title, p.published_at, p.id AS pid FROM metric_jobs j"
         " JOIN posts p ON p.id=j.post_id WHERE j.done_at IS NULL AND j.due_at<=? AND p.removed_at IS NULL"
         " ORDER BY j.due_at LIMIT 200", (iso(),)))
     events, done, manual, failed = [], 0, [], []
@@ -228,8 +236,9 @@ def cmd_collect() -> None:
     parts = [f"采到 {done} 个快照"]
     if linked:
         parts.append(f"{len(linked)} 条按标题在后台对上了作品，已补登记作品 ID")
-    for pf, err in creator_errs.items():
-        parts.append(f"{platforms.label(pf)}创作者后台没取到（{err}）" + ("，已用 TikHub 兜底" if pf == "douyin" and th.configured else ""))
+    for key, err in creator_errs.items():
+        from ..executors.publishers import account_label, platform_of
+        parts.append(f"{account_label(key)}创作者后台没取到（{err}）" + ("，已用 TikHub 兜底" if platform_of(key) == "douyin" and th.configured else ""))
     if manual:
         parts.append(f"{len(manual)} 个需人工导出（superops metrics import）")
     if failed:
@@ -244,7 +253,7 @@ def cmd_collect() -> None:
 def manual_targets(ops, post_ids: list[str] | None = None) -> tuple[list[dict], list[str]]:
     """手动采集要采哪些作品。给了 post_id 就采这些（已标记删除的跳过）；没给就采最近 30 天发布、没删的全部。
     返回 (要采的, 跳过说明)。"""
-    cols = "p.id AS pid, p.platform, p.platform_post_id, p.title, p.published_at, p.removed_at"
+    cols = "p.id AS pid, p.platform, p.account, p.platform_post_id, p.title, p.published_at, p.removed_at"
     skipped: list[str] = []
     if post_ids:
         rows = []

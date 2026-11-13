@@ -126,6 +126,11 @@ def build_batch_card(ops) -> tuple[list[dict], dict | None]:
                 t = parse_iso(p["scheduled_at"]).strftime("%H:%M")
             except ValueError:
                 t = p["scheduled_at"]
+        if len(pubs.account_keys(p["platform"])) > 1 or p.get("account"):
+            try:
+                timing += " · 账号：" + pubs.account_label(pubs.pack_account(p, meta))
+            except pubs.AccountError as ex:
+                timing += f" · ⚠️ {ex}"
         if p["platform"] == "wechat_channels" and mode in ("dry_run", "live", "draft"):
             timing += " · " + ("声明原创" if pubs.payload_for(p, meta).get("declare_original") else "不声明原创")
         items.append({"platform": PLATFORM_LABEL.get(p["platform"], p["platform"]), "time": t,
@@ -157,6 +162,15 @@ def build_batch_card(ops) -> tuple[list[dict], dict | None]:
     }
     ops.executemany("UPDATE publish_packs SET status='carded', updated_at=? WHERE id=?", [(iso(), p["id"]) for p in packs])
     return packs, card
+
+
+def _account_or_none(p: dict, meta: dict) -> str | None:
+    """发布包发到哪个号（账号键）；指定的号认不出来时返回 None（自动发布会因此转人工，人工发布照常）。"""
+    from . import publishers as pubs
+    try:
+        return pubs.pack_account(p, meta)
+    except pubs.AccountError:
+        return None
 
 
 def _per_platform(meta: dict, platform: str) -> dict:
@@ -193,6 +207,11 @@ def image_only(meta: dict, platform: str | None = None) -> bool:
     return images and (platform is None or platform not in IMAGE_POST_PLATFORMS)
 
 
+def _pubs_mod():
+    from . import publishers
+    return publishers
+
+
 def _manual_instructions(p: dict, meta: dict) -> str:
     pm = _per_platform(meta, p["platform"])
     lines = []
@@ -202,7 +221,10 @@ def _manual_instructions(p: dict, meta: dict) -> str:
     if image_only(meta):
         n = len((meta.get("media") or {}).get("images") or [])
         lines.append(f"- 图文（{n} 张图）：按顺序上传下面的图片、复制正文，到官方发布页发")
-    for k, label in (("account", "账号"), ("scheduled_at", "时间"), ("title", "标题")):
+    acct = _account_or_none(p, meta)
+    if acct and (len(_pubs_mod().account_keys(p["platform"])) > 1 or p.get("account")):
+        lines.append(f"- 账号：{_pubs_mod().account_label(acct)}")
+    for k, label in (("scheduled_at", "时间"), ("title", "标题")):
         v = pm.get(k) or meta.get(k)
         if v:
             lines.append(f"- {label}：{v[11:16] if k == 'scheduled_at' and len(str(v)) > 16 else v}")
@@ -257,6 +279,9 @@ def publish_one(ops, ledger, hub, cfg, pack_id: str, approved_at: str | None, *,
     meta = _pack_meta(p["pack_dir"])
     mode = _publisher_mode(cfg, p["platform"], meta)
     label = PLATFORM_LABEL.get(p["platform"], p["platform"])
+    account = _account_or_none(p, meta)
+    if account and len(pubs.account_keys(p["platform"])) > 1:
+        label = pubs.account_label(account)          # 同一平台有多个号：消息里写清是哪个号
     if mode in ("dry_run", "live", "draft") and pubs.module_for(p["platform"]) and not image_only(meta, p["platform"]):
         r = None
         doing = {"dry_run": "发布试运行", "draft": "存草稿"}.get(mode, "发布")
@@ -264,7 +289,7 @@ def publish_one(ops, ledger, hub, cfg, pack_id: str, approved_at: str | None, *,
             r = pubs.run(p, meta, dry_run=(mode == "dry_run"), draft=(mode == "draft"), headless=headless)
         except pubs.NotLoggedIn as ex:
             hub.notify("alert", f"{label}登录失效，改为人工发布", f"{ex}\n\n发布包 `{pack_id}` 已转人工发布。",
-                       priority=1, ref=f"login:{p['platform']}", dedup=False)
+                       priority=1, ref=f"login:{account or p['platform']}", dedup=False)
         except pubs.NeedsVerification as ex:
             hub.notify("alert", f"{label}要身份验证，自动发布停在了验证这一步",
                        f"`{pack_id}`：{ex}\n\n这条还没有发出去。要继续自动发：在本机运行 `superops publish retry {pack_id} --headed`，"
@@ -291,7 +316,7 @@ def publish_one(ops, ledger, hub, cfg, pack_id: str, approved_at: str | None, *,
             return "dry_run", (p, meta, f"{label}试运行：" + "；".join(r.notes))
         if r and r.ok and r.draft:
             ops.execute("UPDATE publish_packs SET status='drafted', updated_at=? WHERE id=?", (iso(), pack_id))
-            ledger.finish(f"publish:{pack_id}", "awaiting_manual", {"draft": True, "notes": r.notes})
+            ledger.finish(f"publish:{pack_id}", "awaiting_manual", {"draft": True, "notes": r.notes, "account": account})
             notes = [n for n in r.notes if not n.startswith(("立即发布", "立即发表"))]
             reply = f"`已发 {pack_id}`" + ("" if p["platform"] == "wechat_channels" else f"（或 `已发 {pack_id} <链接>`）")
             hub.notify("message", f"📝 {label}已存草稿「{p['title'] or p['content_id']}」",
@@ -303,7 +328,7 @@ def publish_one(ops, ledger, hub, cfg, pack_id: str, approved_at: str | None, *,
             return "draft", (p, meta, f"{label}已存草稿")
         if r and r.ok:
             # 没截到作品 ID 也照样登记（ID 先空着）：数据采集时按标题在创作者后台对上作品，再补上 ID
-            rec = {"platform": p["platform"], "platform_post_id": r.platform_post_id, "url": r.url,
+            rec = {"platform": p["platform"], "account": account, "platform_post_id": r.platform_post_id, "url": r.url,
                    "content_id": p["content_id"], "title": p["title"], "publish_mode": "auto",
                    "channel_code": _per_platform(meta, p["platform"]).get("channel_code") or meta.get("channel_code"),
                    "published_at": r.publish_at or iso(),
@@ -399,7 +424,7 @@ def record_manual(pack_id: str, url: str | None = None, platform_post_id: str | 
     p = dict(p)
     meta = _pack_meta(p["pack_dir"])
     ppid = platform_post_id or id_from_url(p["platform"], url)
-    rec = {"platform": p["platform"], "platform_post_id": ppid, "url": url, "content_id": p["content_id"],
+    rec = {"platform": p["platform"], "account": _account_or_none(p, meta), "platform_post_id": ppid, "url": url, "content_id": p["content_id"],
            "title": p["title"], "publish_mode": "semi_auto", "channel_code": _per_platform(meta, p["platform"]).get("channel_code") or meta.get("channel_code"),
            "post_id": f"{p['platform']}_{ppid or pack_id}"[:80], "published_at": iso()}
     ops.execute("UPDATE publish_packs SET status='published', updated_at=? WHERE id=?", (iso(), pack_id))

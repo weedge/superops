@@ -230,7 +230,7 @@ flowchart TB
 | `superops/app/views.py` | 面板和命令行读的只读视图 |
 | `superops/app/http.py` | 管理 API：`/api/*`、`/v1/*`、面板页面；令牌和同源检查 |
 | `superops/app/health.py` | `HealthBoard` |
-| `superops/app/publishing.py` | 面板的发布台：各平台账号（专用 Chrome 登录目录）的状态和读到的昵称 / 账号 ID / 粉丝数 / 头像；校验账号、网页扫码登录、开窗口登录、打开草稿箱、预演、重试放到子进程里跑（同一平台同时只跑一个，扫码可中途取消）；扫码状态、二维码和头像、短信验证码转交；退出登录（登录目录挪到回收处，清掉头像和扫码状态）；发布包详情和只给发布包目录里媒体文件的下载口 |
+| `superops/app/publishing.py` | 面板的发布台：每个号（专用 Chrome 登录目录，同一平台可以多个）的状态和读到的昵称 / 账号 ID / 粉丝数 / 头像；添加账号、设为默认、同一个号登两次的提醒、发布包换账号；校验账号、网页扫码登录、开窗口登录、打开草稿箱、预演、重试放到子进程里跑（同一个号同时只跑一个，发布包的动作占住它要发的号，扫码可中途取消）；扫码状态、二维码和头像、短信验证码转交；退出登录（登录目录挪到回收处，清掉头像和扫码状态）；发布包详情和只给发布包目录里媒体文件的下载口 |
 | `superops/app/preflight.py` | 启动检查：有规则用得到的登录态（创作者后台、专用浏览器）、钥匙串密钥、本机命令是否准备好；`run` 出结果，`render` 写成给人看的消息，`fingerprint` 让同样的缺口一天只提醒一次 |
 | `superops/app/chat.py` | 面板“设置 → 聊天渠道”：钉钉 / 飞书二选一的切换（切完宿主自己重启）、改群（群 ID 或群名）、增删审批人；存成运行时覆盖 |
 | `superops/app/skills.py` | 面板“Skill”页：列出仓库和外部目录的 Skill（被哪些规则用、近 30 天工单数和失败数）；看 SKILL.md / schema.json / 文件；在面板上改仓库 Skill 的 SKILL.md（校验 name / description、防覆盖、保存前存一份进数据目录 `skill-history/`），能恢复历史版本；外部目录只读 |
@@ -280,8 +280,8 @@ flowchart TB
 | `superops/biz/collectors/tikhub.py` | TikHub 客户端 |
 | `superops/biz/executors/__init__.py` | `ActionLedger`：只执行已批准、未过期的动作，按动作 id 幂等 |
 | `superops/biz/executors/publish.py` | 发布包登记、今晚发布卡片、执行发布、人工发布后补登记 |
-| `superops/biz/executors/publishers/__init__.py` | 创作者后台自动发布的公共部分：登录态、锁、试运行、存草稿（`save_draft`）、等大视频传完（`wait_uploaded`）、发布时间（`publish_time`）、草稿在哪（`DRAFTS`、`open_drafts`）、身份验证（`NeedsVerification`） |
-| `superops/biz/executors/publishers/qrlogin.py` | 网页里扫码登录（参照 Easel），七个平台（能发布的三个 + 只管账号的快手、B站、知乎、公众号，见 `publishers.ACCOUNTS`）：无界面打开登录页，找码截图（抖音按尺寸找方形码、小红书创作平台登录框、视频号截跨域扫码 iframe），过期点刷新、几秒重截一次，判断已扫码；抖音短信验证（选接收短信、获取验证码、等面板填码、填进去提交、码错让人重输）；状态写进 `publish-login/<平台>.json`；登录成功和校验账号时读昵称、头像、账号 ID、粉丝数（抖音和小红书的账号接口、视频号 auth_data 响应、B站 nav、知乎 /api/v4/me、快手和公众号的后台页面）；只管账号的平台登没登录问各自的账号接口（快手 current/user、B站 nav、知乎 me），公众号看后台网址里的 token，头像下载到本地 |
+| `superops/biz/executors/publishers/__init__.py` | 创作者后台自动发布的公共部分：账号键（主号就是平台名，后加的号 `douyin@2`；`platform_of`、`account_keys`）和账号登记 `browser-profiles/accounts.json`（含各平台默认账号 `_defaults`）、发布包发到哪个号（`pack_account`：面板改的 > meta 写的 > 默认账号，认不出来抛 `AccountError` 转人工）、按账号的登录态和锁、试运行、存草稿（`save_draft`）、等大视频传完（`wait_uploaded`）、发布时间（`publish_time`）、草稿在哪（`DRAFTS`、`open_drafts`）、身份验证（`NeedsVerification`） |
+| `superops/biz/executors/publishers/qrlogin.py` | 网页里扫码登录（参照 Easel），七个平台（能发布的三个 + 只管账号的快手、B站、知乎、公众号，见 `publishers.ACCOUNTS`）：无界面打开登录页，找码截图（抖音按尺寸找方形码、小红书创作平台登录框、视频号截跨域扫码 iframe），过期点刷新、几秒重截一次，判断已扫码；抖音短信验证（选接收短信、获取验证码、等面板填码、填进去提交、码错让人重输）；状态按账号键写进 `publish-login/<账号键>.json`；登录成功和校验账号时读昵称、头像、账号 ID、粉丝数（抖音和小红书的账号接口、视频号 auth_data 响应、B站 nav、知乎 /api/v4/me、快手和公众号的后台页面）；只管账号的平台登没登录问各自的账号接口（快手 current/user、B站 nav、知乎 me），公众号看后台网址里的 token，头像下载到本地 |
 | `superops/biz/executors/publishers/__main__.py` | 发布前的登录检查 |
 | `superops/biz/executors/publishers/douyin.py` | 抖音发布：先等视频传完再设竖 / 横封面、跳到作品管理页后等后台上传完、短信验证、存草稿（只有一个暂存位，被占就不覆盖） |
 | `superops/biz/executors/publishers/channels.py` | 视频号发布：转 H.264、等上传完再点发表、表单里声明原创、保存草稿 |
@@ -316,6 +316,8 @@ flowchart TB
 | `tests/app/test_autoreply.py` | 钉钉自动回复：默认关、打开后起草并引用回复、同一条只回一次、运营群不接、单聊按对方 ID 发、要本人拿主意的不回并转告、限流、接口和总览带开关；过滤群按群 ID / 按群名、只管群里的 @、关着时不去查、配置里的初始名单 |
 | `tests/app/test_housekeeping_assessor.py` | 到期处理（问题超时按安全选项、工单闲置）、`after` 的等待；研判：规则直配的各项检查（预算、`unless_live`）、语义规则的主动候选、主 Session 的转入和停止、研判失败与面板上的问题 |
 | `tests/app/test_sources.py` | 定时来源（到点、补发、`max_late`、`requires`）和流水线来源（去重、线程、批准守门、防抖、线程关闭、内部事件） |
+| `tests/app/test_multi_account.py` | 同一平台多个号：账号键和登记（登记丢了也认登录目录）、默认账号（移除后回到主号）、发布包的账号解析（账号键 / 账号名 / 备注都认，认不出来不猜、不拿别的号发）、添加账号直接扫码且没登上的号先复用、设为默认要登录着、同一个号登两次会提醒、两个号互不占位且状态文件分开、移除只清自己的、发布包换账号的校验、发布包动作占住它要发的号、社媒账号上下文每个号一行标出默认 |
+| `tests/biz/test_metrics_accounts.py` | 数据采集按账号分开开浏览器（没记账号的算主号，一个号失败不影响别的号）、多个号时待发布卡片写明账号（认不出的标警告）、人工登记记下是哪个号发的 |
 | `tests/app/test_publishing.py` | 面板发布台：发布包预览按平台取文案和素材、媒体下载口拒绝目录外和非媒体文件、批准发布要确认且只批没发的、人工登记校验链接、浏览器动作同一平台只跑一个、退出登录挪走登录目录 |
 | `tests/app/test_qrlogin.py` | 网页扫码登录：七个平台的账号列表（只管账号的四个没有发布模式、不进发布、没有草稿箱）、四个新平台的登录判断和身份解析、状态文件和验证码文件、过时的中途状态判出错、二维码只在等扫码时给、验证码只在要时收、扫码登录读回昵称粉丝数和头像、取消能停掉登录进程且不记成失败、退出登录清掉头像和扫码状态、三个平台身份接口的解析 |
 | `tests/app/test_contents_action.py` | 内容日历：挪日期（还没批的发布包跟着挪）、删除要确认且在发布 / 已发的不让删、发布要确认且只对写好稿的图文（发出带凭据的 content.images.requested，计划日已过就今天发） |

@@ -100,14 +100,15 @@ def login_checks(cfg: dict, settings: dict, check=None) -> list[dict]:
         mode = str((pcfg or {}).get("mode") or "off")
         if platform not in pubs.PLATFORMS or mode == "off" or not used:
             continue
-        label = pubs.PLATFORMS[platform]["label"]
+        key = pubs.default_account(platform)              # 同一平台多个号时，检查默认账号（发布包默认发到它）
+        label = pubs.account_label(key) if key != platform else pubs.PLATFORMS[platform]["label"]
         try:
-            ok, where = (check or pubs.check_login)(platform)
+            ok, where = (check or pubs.check_login)(key)
             detail = "已登录" if ok else "未登录"
         except Exception as error:  # noqa: BLE001  浏览器起不来、目录被占用等：当作没查成，照实说
             ok, detail = False, f"没查成：{str(error)[:120]}"
         items.append({"id": f"login:{platform}", "kind": "login", "title": f"{label}创作者后台登录态", "ok": ok, "rules": used,
-                      "detail": f"{detail}（发布模式 {mode}）", "fix": f"superops publish login {platform}"})
+                      "detail": f"{detail}（发布模式 {mode}）", "fix": f"superops publish login {key}"})
     return items
 
 

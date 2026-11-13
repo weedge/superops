@@ -492,16 +492,17 @@ def cmd_publish(a) -> None:
         if res.url:
             print("  链接", res.url)
         return
-    targets = list(pubs.ACCOUNTS) if a.platform == "all" else [a.platform]
-    if any(pf not in pubs.ACCOUNTS for pf in targets):
-        sys.exit(f"不认识的平台 {a.platform}（{' / '.join(pubs.ACCOUNTS)}）")
+    # 给的是账号键就只动这一个号（主号的账号键就是平台名，面板“校验账号”也这样调）；all 是全部号
+    targets = [k for pf in pubs.ACCOUNTS for k in pubs.account_keys(pf)] if a.platform == "all" else [a.platform]
+    if any(not pubs.is_account_key(k) for k in targets):
+        sys.exit(f"不认识的账号 {a.platform}（平台名就是主号：{' / '.join(pubs.ACCOUNTS)}；后加的号如 douyin@2）")
     for pf in targets:
-        label = pubs.ACCOUNTS[pf]["label"]
+        label = pubs.account_label(pf)
         if a.action == "open":
-            if pf not in pubs.DRAFTS:
+            if pubs.platform_of(pf) not in pubs.DRAFTS:
                 print(f"{label}：没有可打开的草稿箱")
                 continue
-            print(f"{label}：已打开专用 Chrome，停在草稿位置（{pubs.DRAFTS[pf]['where']}）。检查完点发布，关掉窗口即结束。")
+            print(f"{label}：已打开专用 Chrome，停在草稿位置（{pubs.DRAFTS[pubs.platform_of(pf)]['where']}）。检查完点发布，关掉窗口即结束。")
             pubs.open_drafts(pf)
         elif a.action == "login":
             print(f"{label}：已打开 Chrome，请扫码登录（5 分钟内）……")
@@ -521,7 +522,7 @@ def cmd_publish(a) -> None:
             r = qrlogin.whoami(pf)
             ok = r["logged_in"]
             who = f"  {r['name']}" if r.get("name") else ""
-            print(f"{'✓' if ok else '✗'} {label:<4} {'已登录' if ok else '未登录（superops publish qrlogin ' + pf + '）'}{who}  {r['url']}")
+            print(f"{'✓' if ok else '✗'} {pf} {label} {'已登录' if ok else '未登录（superops publish qrlogin ' + pf + '）'}{who}  {r['url']}")
             print(json.dumps({"account": {k: r.get(k) for k in ("logged_in", "name", "id", "followers")}}, ensure_ascii=False))
 
 
@@ -725,8 +726,9 @@ def main(argv: list[str] | None = None) -> None:
     s = sp.add_parser("publish")
     s.add_argument("action", choices=["login", "qrlogin", "check", "try", "retry", "open"])
     s.add_argument("platform", nargs="?", default="all",
-                   help="平台（douyin / wechat_channels / xiaohongshu，只管账号的 kuaishou / bilibili / zhihu / wechat_oa，或 all）；try / retry 时是发布包 ID。"
-                        "qrlogin：无界面打开登录页，二维码截图到 ~/popto-superops-data/publish-login/<平台>.png（面板账号页显示），手机扫码；"
+                   help="账号键：平台名就是主号（douyin / wechat_channels / xiaohongshu，只管账号的 kuaishou / bilibili / zhihu / wechat_oa），"
+                        "同一平台后加的号是 douyin@2 这样；或 all（全部号）；try / retry 时是发布包 ID。"
+                        "qrlogin：无界面打开登录页，二维码截图到 ~/popto-superops-data/publish-login/<账号键>.png（面板账号页显示），手机扫码；"
                         "retry：已批准但自动发布失败转了人工的，用原来的批准再发一次（批准须在 24 小时内）")
     s.add_argument("--live", action="store_true", help="try：真发布（默认只试运行）")
     s.add_argument("--draft", action="store_true", help="try：填好后存进平台草稿箱，不发布")

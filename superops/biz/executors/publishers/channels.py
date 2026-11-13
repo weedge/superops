@@ -140,7 +140,7 @@ def publish(pack: dict, meta: dict, *, dry_run: bool, shots: Path, headless: boo
     video, converted = ensure_h264(video, shots)
     if converted:
         res.notes.append(converted)
-    with browser("wechat_channels", headless=headless, error_shots=shots) as ctx:
+    with browser(pack.get("account") or "wechat_channels", headless=headless, error_shots=shots) as ctx:
         page = ctx.new_page()
         try:
             open_until(page, HOME, lambda: page.get_by_role("button", name="发表视频"), what="发表视频")

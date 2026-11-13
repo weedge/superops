@@ -79,7 +79,7 @@ def publish(pack: dict, meta: dict, *, dry_run: bool, shots: Path, headless: boo
     video = Path(pack["video"])
     if not video.is_file():
         raise PublishError(f"视频不存在：{video}")
-    with browser("douyin", headless=headless, error_shots=shots) as ctx:
+    with browser(pack.get("account") or "douyin", headless=headless, error_shots=shots) as ctx:
         page = ctx.new_page()
         page.goto(UPLOAD, wait_until="commit", timeout=90000)
         page.wait_for_timeout(3000)
@@ -202,7 +202,7 @@ def publish(pack: dict, meta: dict, *, dry_run: bool, shots: Path, headless: boo
         aweme = created.get("aweme") if isinstance(created.get("aweme"), dict) else {}
         aid = str(created.get("aweme_id") or created.get("item_id") or aweme.get("aweme_id") or "")
         if not aid:                                   # 接口没给 ID（大文件后台传完再发时常见）：到作品列表里按标题确认
-            aid = str(_confirm_in_list(pack.get("title") or "", clicked) or "")
+            aid = str(_confirm_in_list(pack.get("title") or "", clicked, pack.get("account")) or "")
             if aid:
                 res.notes.append("作品 ID 是到作品列表里按标题对上的")
         res.platform_post_id = aid or None
@@ -273,12 +273,12 @@ def _wait_published(page, shots: Path, res: PublishResult, *, headless: bool) ->
     raise PublishError("点了发布，但没有跳到作品管理页，请到后台确认是否发出")
 
 
-def _confirm_in_list(title: str, after) -> str | None:
+def _confirm_in_list(title: str, after, account: str | None = None) -> str | None:
     """发布接口没截到作品 ID 时，到作品列表（接口）里按标题找刚发的这条；找到返回作品 ID。浏览器已关，单独开一次。"""
     try:
         from ...collectors.creator import list_works, pick_new_work
         for _ in range(3):
-            found = pick_new_work(title, after, list_works("douyin", since=after, max_pages=1))
+            found = pick_new_work(title, after, list_works("douyin", since=after, max_pages=1, account=account))
             if found:
                 return found["id"]
             time.sleep(10)

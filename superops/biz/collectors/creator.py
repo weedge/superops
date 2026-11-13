@@ -260,18 +260,19 @@ def _xhs(ctx, page, want, since, max_pages) -> list[dict]:
 
 
 def list_works(platform: str, want_ids: set[str] = frozenset(), *, since: datetime | None = None,
-               max_pages: int = 15, lock_wait: float = LOCK_WAIT) -> list[dict]:
+               max_pages: int = 15, lock_wait: float = LOCK_WAIT, account: str | None = None) -> list[dict]:
     """读自有账号的作品列表（新→旧），翻到 want_ids 都找到、且（给了 since 时）早于 since 为止。
-    没登录抛 NotLoggedIn，别的失败抛异常，调用方降级。"""
+    account 是账号键（同一平台多个号时），不给就是主号。没登录抛 NotLoggedIn，别的失败抛异常，调用方降级。"""
     from ..executors.publishers import NotLoggedIn, browser, profile_dir
 
     fn = {"douyin": _douyin, "wechat_channels": _channels, "xiaohongshu": _xhs}.get(platform)
     if not fn:
         raise LookupError(f"{platform} 没有创作者后台取数源")
-    if not any(profile_dir(platform).iterdir()):
-        raise NotLoggedIn(f"{platform} 创作者后台没登录过（superops publish login {platform}）")
+    key = account or platform
+    if not any(profile_dir(key).iterdir()):
+        raise NotLoggedIn(f"{key} 创作者后台没登录过（superops publish login {key}）")
     want = {norm_id(platform, x) for x in want_ids if x}
-    with browser(platform, lock_wait=lock_wait) as ctx:
+    with browser(key, lock_wait=lock_wait) as ctx:
         page = ctx.new_page()
         works = fn(ctx, page, want, since, max_pages)
     seen, out = set(), []

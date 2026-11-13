@@ -224,12 +224,13 @@ superops published pk_c_20261113_01_douyin https://www.douyin.com/video/…
 
 **发之前想先看看会填成什么样**：发布卡上“预演”，或 `superops publish try <发布包ID>`（只试运行，不发）。
 
-**账号**：面板“业务 → 内容 → 账号”每个平台一张卡，显示头像、昵称、账号 ID、粉丝数和登录状态。分两组：抖音、小红书、视频号能自动发布；快手、B站、知乎、公众号先只管账号（登录、校验、看身份），发内容走人工路径（卡上有官方发布页链接）。
+**账号**：面板“业务 → 内容 → 账号”按社媒分组，顶上一排平台可以只看某一个；每个平台一组，组里每个号一张卡，显示头像、昵称、账号 ID、粉丝数和登录状态。抖音、小红书、视频号能自动发布；快手、B站、知乎、公众号先只管账号（登录、校验、看身份），发内容走人工路径（组头有官方发布页链接）。
 
 - **扫码登录 / 换号**：点“扫码登录”，弹窗里十几秒后出二维码，用手机 App（视频号用微信）扫，手机上确认就登上了。二维码过期会自动换新的；抖音要短信验证时，弹窗里出输入框，填手机收到的验证码。登录成功后昵称、头像自动读出来。关掉弹窗就停止。
 - **校验账号**：确认还登着，顺带刷新昵称、头像、粉丝数。
 - **二维码出不来**（网络、平台风控）：用卡片下面的“在 Mac 上开窗口登录”，在运行 superops 的这台 Mac 上弹出专用 Chrome 扫。
 - **退出登录**：登录目录挪到回收处，不直接删。
+- **同一平台多个号**：每个平台组头右边有“＋ 添加某平台账号”，点了直接扫码登新号（登录态和原来的号分开存，账号键是 `douyin@2` 这样）。平台有多个号时，卡上标“默认”的那个是发布包没指定账号时发的号，评论引流和 16:30 的登录检查也用它；别的号点“设为默认”就换过来。某一条要发到别的号：发布中心卡片上“账号”一行点“换账号…”（Agent 写发布包时也可以在 `per_platform.<平台>.account` 写账号键或账号名）。后加的号不要了点“移除这个号…”。
 
 终端：
 
@@ -237,7 +238,8 @@ superops published pk_c_20261113_01_douyin https://www.douyin.com/video/…
 superops publish qrlogin douyin        # 无界面扫码：二维码存在 ~/popto-superops-data/publish-login/douyin.png
 superops publish login douyin          # 在这台 Mac 上开窗口扫码（wechat_channels、xiaohongshu 同理）
 superops publish qrlogin zhihu         # 其他社媒账号同理：kuaishou / bilibili / zhihu / wechat_oa
-superops publish check                 # 全部平台的登录状态和账号昵称
+superops publish qrlogin douyin@2      # 同一平台的第二个号（先在面板“添加账号”，或直接用新的账号键）
+superops publish check                 # 全部号的登录状态和账号昵称（superops publish check douyin@2：只查这一个号）
 ```
 
 每天 16:30 系统会自己检查一次，登录失效会在群里提醒，免得 17:00 批了才发现。

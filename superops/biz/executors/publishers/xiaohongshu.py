@@ -171,7 +171,7 @@ def publish(pack: dict, meta: dict, *, dry_run: bool, shots: Path, headless: boo
         raise PublishError("发布包里既没有视频也没有图片")
     if not pack.get("video") and len(images) > MAX_IMAGES:
         raise PublishError(f"小红书图文最多 {MAX_IMAGES} 张，这个发布包有 {len(images)} 张")
-    with browser("xiaohongshu", headless=headless, error_shots=shots) as ctx:
+    with browser(pack.get("account") or "xiaohongshu", headless=headless, error_shots=shots) as ctx:
         page = ctx.new_page()
         try:
             open_until(page, URL, lambda: page.get_by_text("拖拽视频到此或点击上传"), what="发布页")

@@ -80,11 +80,11 @@ def _body(page) -> str:
 
 
 def _douyin(url: str, text: str, d: Path, *, headless: bool) -> CommentResult:
-    from .publishers import browser, friendly_error
+    from .publishers import browser, default_account, friendly_error
 
     res = CommentResult(False)
     try:
-        with browser("douyin", headless=headless, error_shots=d) as ctx:
+        with browser(default_account("douyin"), headless=headless, error_shots=d) as ctx:   # 品牌号 = 抖音的默认账号
             page = ctx.new_page()
             page.goto(url, wait_until="domcontentloaded", timeout=60000)
             box = page.get_by_text(PLACEHOLDER).first
