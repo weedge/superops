@@ -288,3 +288,58 @@ def test_social_accounts_provider_lists_every_platform_without_login_state(home,
     assert rows["bilibili"]["status"] == "none"
     assert "不是 Popto 产品里用户绑定的账号" in data["note"] and "secret-cookie" not in out
     ctx.close()
+
+
+def test_publish_queue_tells_image_posts_from_videos_and_what_is_already_in_flow(home, data_dir):
+    """今日发布推荐用：今天有什么在发布流程里、哪些写好稿的是图文（能自动出图）。"""
+    from superops.biz import db
+    from superops.biz.timeutil import iso
+    ops = db.open_ops()
+    for cid, fmt in (("c_20261113_01", "小红书图文，8 页"), ("c_20261113_02", "口播视频 60 秒"), ("c_20261111_01", "小红书图文")):
+        f = data_dir / "work" / "t1" / "scripts" / cid / "xiaohongshu.md"
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(f"# 稿子\n- 平台：{fmt}\n", encoding="utf-8")
+        ops.execute("INSERT INTO contents(id,topic,script_path,status,created_at) VALUES (?,?,?,?,?)",
+                    (cid, "选题" + cid, json.dumps([f"work/t1/scripts/{cid}/xiaohongshu.md"]), "scripted", "2026-11-10T00:00:00+08:00"))
+    ops.execute("INSERT INTO publish_packs(id,content_id,platform,title,pack_dir,status,scheduled_at,created_at,updated_at)"
+                " VALUES ('pk_c_20261111_01_xiaohongshu','c_20261111_01','xiaohongshu','t','/x','ready','2026-11-13T20:00:00+08:00',?,?)",
+                (iso(), iso()))
+    ops.commit()
+    ops.close()
+    run_dir = data_dir / "work" / "t9"
+    ctx = ContextBuilder(None, run_dir)
+    ctx.build(["publish_queue"], {"task": {"id": "t9"}, "events": []})
+    q = json.loads((run_dir / "context" / "publish_queue.json").read_text(encoding="utf-8"))
+    by = {c["id"]: c for c in q["contents"]}
+    assert by["c_20261113_01"]["scripts"][0]["format"] == "图文" and by["c_20261113_01"]["planned_date"] == "2026-11-13"
+    assert by["c_20261113_02"]["scripts"][0]["format"] == "视频"
+    assert by["c_20261111_01"]["has_pack"] is True and [p["id"] for p in q["packs"]] == ["pk_c_20261111_01_xiaohongshu"]
+    ctx.close()
+
+
+def test_event_media_copies_every_image_of_an_image_post(home, data_dir, tmp_path):
+    imgs = []
+    for n in ("p01.png", "p02.png"):
+        f = tmp_path / n
+        f.write_bytes(b"\x89PNG")
+        imgs.append(str(f))
+    run_dir = data_dir / "work" / "t10"
+    ctx = ContextBuilder(None, run_dir)
+    ctx.build(["event_media"], {"task": {"id": "t10"}, "events": [{"type": "content.images.ready", "data": {"content_id": "c", "images": imgs}}]})
+    assert sorted(p.name for p in (run_dir / "media").iterdir()) == ["p01.png", "p02.png"]
+    ctx.close()
+
+
+def test_help_screenshots_are_copied_for_image_posts(home, data_dir, tmp_path, monkeypatch):
+    help_dir = tmp_path / "help"
+    (help_dir / "images").mkdir(parents=True)
+    (help_dir / "README.md").write_text("帮助")
+    (help_dir / "images" / "21-inspiration.png").write_bytes(b"\x89PNG")
+    (help_dir / "images" / "notes.txt").write_text("不是图片")
+    monkeypatch.setattr(ctxmod, "popto_help_dir", lambda cfg: help_dir)
+    run_dir = data_dir / "work" / "t11"
+    ctx = ContextBuilder(None, run_dir)
+    ctx.build(["popto_help_images"], {"task": {"id": "t11"}, "events": []})
+    assert [p.name for p in (run_dir / "context" / "popto-help-images").iterdir()] == ["21-inspiration.png"]
+    assert any("积分余额" in d for _, d in ctx.files)                     # 提醒出图时裁掉 / 盖住没打码的地方
+    ctx.close()

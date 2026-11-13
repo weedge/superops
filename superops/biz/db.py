@@ -117,6 +117,8 @@ OPS_MIGRATIONS = [("comments", "collected_at", "TEXT"),
                   ("demands", "is_test", "INTEGER"),  # 需求原话标了【测试】：卡片和 MR 上都标出来
                   ("demands", "task", "TEXT"),        # 负责它的开发工单目录名：后续几轮按它找回需求
                   ("contents", "task", "TEXT"),       # 排出这条选题的工单：工单结束时它还没批的选题标成搁置
+                  ("contents", "planned_date", "TEXT"),   # 面板日历上挪过的计划发布日（没挪过就按内容 ID 里的日期）
+                  ("contents", "removed_at", "TEXT"),     # 面板日历上删掉的时间（状态同时改成 deleted，不真删）
                   ("leads", "target_url", "TEXT"),    # 要评论的那条作品
                   ("leads", "comment_text", "TEXT"),  # 卡片上给人看、批了就照发的评论原文
                   ("leads", "comment_status", "TEXT"),  # sent / unconfirmed（点了发送没确认到）/ manual（要人去发）

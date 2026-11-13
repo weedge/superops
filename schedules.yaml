@@ -5,6 +5,7 @@
 - { type: cron.collect_metrics, name: 作品指标采集,    every: "30m" }
 - { type: cron.funnel_export, name: 注册漏斗导出,      at: "06:40" }
 - { type: cron.daily_brief, name: 每日运营日报,        at: "08:30" }
+- { type: cron.daily_publish_plan, name: 今日发布推荐,  at: "09:30", max_late: "6h" }   # 今天没东西发时推荐写好稿的图文，批了进出图
 - { type: cron.social_listening, name: 社媒监听（接口）,   at: "14:00" }   # 接口监听（抖音 / 小红书 / 视频号 / 快手）
 - { type: cron.social_listening_browser, name: 社媒监听（浏览器补位）, at: "14:10" }   # 浏览器补位（知乎 / B站 / 搜狗微信）
 - { type: cron.publish_login_check, name: 发布账号登录检查, at: "16:30", max_late: "30m", requires: publishers }

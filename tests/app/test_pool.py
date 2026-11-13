@@ -608,3 +608,17 @@ def test_旧库的运行记录表启动时补上模型和强度两列(tmp_path):
         assert {(r["id"], r["model"], r["effort"]) for r in store.runs()} == {("r0", None, None), ("r1", "gpt-x", "high")}
     finally:
         store.close()
+
+
+def test_卡片的理由风险写成一段文字时包成数组_不判不合格():
+    """2026-11-13 T299：Claude 把 reasons / risks 写成字符串，校验不过重跑一整轮。"""
+    from superops.executor.pool import _coerce_card
+    out = {"state": "waiting", "summary": "s", "question": {"text": "q", "card": {"reasons": "今天日历上没排图文。", "risks": "  ", "options": [
+        {"key": "1", "label": "发", "emit": {"type": "content.images.requested", "subject": "content:c"}}, {"key": "skip", "label": "不发"}]}}}
+    _coerce_card(out)
+    card = out["question"]["card"]
+    assert card["reasons"] == ["今天日历上没排图文。"] and card["risks"] == []
+    assert card["options"][0]["emit"] == [{"type": "content.images.requested", "subject": "content:c"}] and "emit" not in card["options"][1]
+    same = {"state": "ready", "summary": "s", "question": None}
+    _coerce_card(same)
+    assert same["question"] is None

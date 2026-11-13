@@ -1,6 +1,7 @@
 """业务模块的单元测试（移植自 ops 的 tests/test_units.py）：钉钉指令解析、合并闸门、卡片渲染、
 指标采集、Agent 产出入库、发布执行器、创作者后台取数。"""
 import json
+from pathlib import Path
 
 from superops.biz import db, ingest
 from superops.biz.timeutil import iso
@@ -839,3 +840,81 @@ def test_合并后_定时核实线上版本_包含就通过_过期没上线就�
     at("2026-11-12 17:30")
     events, _ = ci.check_deploys(gl)
     assert [e["type"] for e in events] == ["deploy.mismatch"] and "期望包含 c9a7ca68103e" in events[0]["summary"]
+
+
+def test_image_posts_go_to_the_xhs_publisher_and_to_manual_elsewhere(home, monkeypatch, tmp_path):
+    """图文（只有图片、没有视频）：小红书的发布器会发图文，按页序把图片交给它；别的平台的发布器只会发视频，直接转人工、不去试。"""
+    from superops.biz.executors import publish, publishers as pubs
+    (tmp_path / "p01.png").write_bytes(b"\x89PNG")
+    (tmp_path / "p02.png").write_bytes(b"\x89PNG")
+    (tmp_path / "meta.json").write_text(json.dumps({"content_id": "c", "media": {"images": ["p01.png", "p02.png"], "cover": "p01.png"},
+                                                    "per_platform": {"xiaohongshu": {"title": "图文标题", "body": "正文"},
+                                                                     "douyin": {"title": "图文标题", "body": "正文"}}}, ensure_ascii=False))
+    ops = db.open_ops()
+    for pf in ("xiaohongshu", "douyin"):
+        ops.execute("INSERT INTO publish_packs(id,content_id,platform,title,pack_dir,publish_mode,status) VALUES (?,?,?,?,?,?,?)",
+                    (f"pk_c_{pf}", "c", pf, "图文标题", str(tmp_path), "semi_auto", "carded"))
+    ops.commit()
+    sent, ran = [], []
+    monkeypatch.setattr(publish, "hub_client", lambda: type("H", (), {"notify": lambda self, k, t, b, **kw: sent.append((k, t, b))})())
+    monkeypatch.setattr(publish, "emit_result", lambda *a, **k: None)
+    monkeypatch.setattr(publish, "load_task", lambda: {"task": {"id": "t"}, "events": [
+        {"data": {"pack_id": "pk_c_xiaohongshu"}, "received_at": iso()}, {"data": {"pack_id": "pk_c_douyin"}, "received_at": iso()}]})
+    monkeypatch.setattr("superops.biz.config.load_agents_config", lambda *a, **k: {"publishers": {"xiaohongshu": {"mode": "draft"}, "douyin": {"mode": "draft"}}})
+
+    def fake_run(p, meta, **kw):
+        ran.append((p["platform"], [Path(x).name for x in pubs.payload_for(p, meta)["images"]], kw.get("draft")))
+        return pubs.PublishResult(ok=True, dry_run=False, draft=True, notes=["图文：已按页序上传 2 张图"])
+    monkeypatch.setattr(pubs, "run", fake_run)
+    publish.cmd_run()
+    assert ran == [("xiaohongshu", ["p01.png", "p02.png"], True)]                       # 抖音的图文没去试
+    manual = [b for k, t, b in sent if "请手动发布" in t]
+    assert len(manual) == 1 and "抖音" in manual[0] and "图文（2 张图）" in manual[0]
+    assert any("已存草稿" in t for k, t, b in sent)
+    assert publish.image_only({"media": {"images": ["a.png"]}}, "douyin") and not publish.image_only({"media": {"images": ["a.png"]}}, "xiaohongshu")
+    assert not publish.image_only({"media": {"video": "v.mp4", "images": ["a.png"]}}, "douyin")
+
+
+def test_render_pages_turns_html_into_fixed_size_images(tmp_path):
+    """图文出图用的渲染工具：每个 html 截成同名 png，尺寸固定；图片没加载出来要报出来。本机没有 Chrome 时跳过。"""
+    import shutil as _sh
+    from pathlib import Path
+
+    import pytest
+    pytest.importorskip("playwright.sync_api")
+    if not (_sh.which("google-chrome") or Path("/Applications/Google Chrome.app").exists()):
+        pytest.skip("本机没有 Chrome")
+    from superops.biz import render_pages
+    pages = tmp_path / "pages"
+    pages.mkdir()
+    (pages / "p01.html").write_text("<html><body style='margin:0;background:#fff'><h1>封面</h1></body></html>", encoding="utf-8")
+    (pages / "p02.html").write_text("<html><body><img src='assets/missing.png'></body></html>", encoding="utf-8")
+    r = render_pages.render(pages, tmp_path / "out", 540, 720)
+    assert [Path(p).name for p in r["images"]] == ["p01.png", "p02.png"]
+    png = (tmp_path / "out" / "p01.png").read_bytes()
+    assert png[:4] == b"\x89PNG" and int.from_bytes(png[16:20], "big") == 540 and int.from_bytes(png[20:24], "big") == 720
+    assert any("p02.html" in e and "missing.png" in e for e in r["errors"])
+
+
+def test_pack_registered_after_the_1700_card_gets_its_own_card_today(home, monkeypatch, tmp_path):
+    """人上午批了“今天发”，出图和质检拖到 17:00 以后才入库：当场补一张待发布卡片，不等明天；17:00 前入库的照旧等批量卡片。"""
+    from superops.biz.executors import publish
+    out = []
+    monkeypatch.setattr(publish, "emit_result", lambda summary, **kw: out.append((summary, kw)))
+
+    def register(pid_content, when, sched):
+        at(when)
+        monkeypatch.setattr(publish, "load_task", lambda: {"task": {"id": "t"}, "events": [
+            {"subject": f"content:{pid_content}", "data": {"content_id": pid_content, "pack_dir": str(tmp_path), "platforms": ["xiaohongshu"],
+                                                           "scheduled_at": sched, "title": "图文"}}]})
+        publish.cmd_register()
+        return out[-1]
+
+    summary, kw = register("c_a", "2026-11-13 15:00", "2026-11-13T20:00:00+08:00")
+    assert "等 17:00" in summary and not kw.get("decision_card")
+    summary, kw = register("c_b", "2026-11-13 18:10", "2026-11-13T20:00:00+08:00")
+    card = kw["decision_card"]
+    assert kw["needs_decision"] and "补发" in summary and len(card["items"]) == 2           # 下午那条还没上过卡，一起带上
+    assert {e["data"]["pack_id"] for e in card["options"][0]["emit"]} == {"pk_c_a_xiaohongshu", "pk_c_b_xiaohongshu"}
+    summary, kw = register("c_c", "2026-11-13 18:20", "2026-11-15T20:00:00+08:00")         # 不是今天发的：等后天的 17:00
+    assert not kw.get("decision_card")

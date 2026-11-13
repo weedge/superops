@@ -157,6 +157,48 @@ class ContextBuilder:
                                         " WHERE created_at>=? ORDER BY id", (since,)))
         self._write("content_calendar.json", rows, "已经排过的选题（近 60 天；content_id 不能重复用）")
 
+    def p_popto_help_images(self, lease, events):
+        """Popto 帮助文档的界面截图（docs/popto-help/images）：图文出图时当配图素材用（积分余额、账号头像有的没打码，出图时要裁掉或盖住）。"""
+        from .config import load_agents_config
+
+        src = popto_help_dir(load_agents_config())
+        imgs = sorted(f for f in (src / "images").iterdir() if f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")) \
+            if src and (src / "images").is_dir() else []
+        if not imgs:
+            self.files.append(("（Popto 帮助文档截图没找到）", f"{src}/images"))
+            return
+        dst = self.ctx_dir / "popto-help-images"
+        dst.mkdir(exist_ok=True)
+        for f in imgs:
+            target = dst / f.name
+            if not target.exists():
+                try:
+                    os.link(f, target)
+                except OSError:
+                    shutil.copy2(f, target)
+        self.files.append(("context/popto-help-images/", f"Popto 帮助文档的界面截图 {len(imgs)} 张（文件名对应帮助文档里引用的截图）：做图文配图只用这些，"
+                                                          "不自己截线上页面。注意：有的截图右上角还露着积分余额、左下角露着账号头像 / 昵称，用之前裁掉或盖住"))
+
+    def p_publish_queue(self, lease, events):
+        """今天能发什么：今天和以后的发布包、已写稿的内容（按计划日、平台、图文还是视频）。给“今日发布推荐”用。"""
+        today = now().date().isoformat()
+        packs = db.rows(self.ops.execute(
+            "SELECT p.id, p.content_id, p.platform, p.title, p.status, p.scheduled_at, p.updated_at, a.status action_status FROM publish_packs p"
+            " LEFT JOIN actions a ON a.action_id='publish:'||p.id WHERE p.status NOT IN ('published','rejected') OR substr(p.updated_at,1,10)>=?"
+            " ORDER BY p.scheduled_at", (today,)))
+        contents = []
+        from .contents import planned_date, scripts
+        for c in db.rows(self.ops.execute("SELECT id, pillar, persona, topic, script_path, status, created_at, planned_date FROM contents"
+                                          " WHERE status IN ('scripted','approved','planned') AND removed_at IS NULL ORDER BY id")):
+            has_pack = any(p["content_id"] == c["id"] for p in packs)
+            contents.append({**{k: c[k] for k in ("id", "pillar", "persona", "topic", "status")},
+                             "planned_date": planned_date(c), "scripts": scripts(c), "has_pack": has_pack})
+        self._write("publish_queue.json", {"today": today, "packs": packs, "contents": contents, "note": (
+            "packs：还没发完的和今天动过的发布包（status：ready 待批 / carded 卡片已发 / approved 已批 / drafted 已存草稿 / published 已发布）。"
+            "contents：写好稿的内容；scripts.auto_images=true 的（小红书图文）才能走自动出图（content.images.requested）；知乎 / 公众号的图文是文章，"
+            "不能自动出图；视频的素材生产已停用（D-20261110-01）。"
+            "has_pack=true 的已经在发布流程里，不要再推荐。")}, "今天能发什么：发布包和已写稿的内容")
+
     def p_social_accounts(self, lease, events):
         """superops 发布台管着的各平台社媒账号（创作者后台的登录）：登没登、是哪个号、能不能自动发布。
         明确请求的工单默认带上，人问“现在绑了哪些号 / 哪个号掉线了”时直接答。只给状态，不给登录态本身。"""
@@ -306,7 +348,9 @@ class ContextBuilder:
     def p_event_media(self, lease, events):
         media = self.run_dir / "media"
         for e in events:
-            for ref in (e.get("link"), (e.get("data") or {}).get("media_path") if isinstance(e.get("data"), dict) else None):
+            data = e.get("data") if isinstance(e.get("data"), dict) else {}
+            refs = [e.get("link"), data.get("media_path"), *(data.get("images") or [])]     # 图文：images 是每页图片的路径
+            for ref in refs:
                 if not ref:
                     continue
                 p = Path(unquote(urlparse(ref).path)) if str(ref).startswith("file://") else Path(str(ref)).expanduser()

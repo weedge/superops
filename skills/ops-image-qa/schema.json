@@ -1,0 +1,40 @@
+{
+  "description": "图文质检",
+  "required": [
+    "issues"
+  ],
+  "properties": {
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "type",
+          "detail",
+          "severity"
+        ],
+        "properties": {
+          "page": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "blocker",
+              "major",
+              "minor"
+            ]
+          }
+        }
+      }
+    },
+    "checked": {
+      "type": "integer"
+    }
+  }
+}

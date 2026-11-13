@@ -60,6 +60,19 @@ class Outcome:
     cancelled: bool = False
 
 
+
+def _coerce_card(output) -> None:
+    """卡片的 reasons / risks 写成了一段文字（不是数组）时包成一项的数组，不为这个判输出不合格、重跑一整轮
+    （2026-11-13 T299：Claude 把两项都写成字符串，校验不过重跑，多花 98 秒、$1.08）。"""
+    card = ((output or {}).get("question") or {}).get("card") if isinstance(output, dict) and isinstance(output.get("question"), dict) else None
+    if isinstance(card, dict):
+        for key in ("reasons", "risks"):
+            if isinstance(card.get(key), str):
+                card[key] = [card[key]] if card[key].strip() else []
+        for opt in card.get("options") or []:            # 选项的 emit 写成单个事件对象（T300）：包成一项的数组
+            if isinstance(opt, dict) and isinstance(opt.get("emit"), dict):
+                opt["emit"] = [opt["emit"]]
+
 class AgentPool:
     def __init__(self, cfg: dict, store, settings, health=None):
         self.cfg, self.store, self.settings, self.health = cfg, store, settings, health
@@ -239,6 +252,7 @@ class AgentPool:
                     res: RunResult = adapter_for(acfg).run(spec, run_dir / f"turn-{n:03d}-{agent}.log")
                     if res.ok and res.output is not None:
                         res.output, _hits = redact.redact_obj(res.output)
+                        _coerce_card(res.output)
                     errors = None
                     if res.ok:
                         errors = (validate(res.output, schema) if res.output is not None else ["没有拿到 JSON 输出"]) or None

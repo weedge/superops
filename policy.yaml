@@ -134,16 +134,43 @@ policy:
             conclude_with: [content.qa.passed, content.media.rework]}
       tell: needed
       priority: 1
+    - id: daily-publish-plan
+      name: 今日发布推荐
+      instruction: 每天上午看今天有没有能发的内容；已经有发布包在走就不出声，没有就从写好稿的图文里推荐，发“今天发哪篇”的卡片，批了直接进出图。
+      when: {origin: cron, types: [cron.daily_publish_plan]}
+      run: {role: decide, agent: claude, skill: ops-daily-publish, tools: readonly, effort: medium, timeout: 15m,
+            context: [publish_queue, content_calendar, social_accounts]}
+      tell: needed
+      priority: 1
+    - id: image-post
+      name: 图文出图
+      instruction: 人批准某篇已写稿的图文要发后，按稿子逐页排版、用帮助文档截图配图，渲染成竖版 3:4 图片交给图文质检；质检打回就在原图上改。只出图，不发布。
+      when: {types: [content.images.requested]}
+      requires_approval: true
+      run: {role: write, agent: claude, skill: ops-image-post, tools: workspace, effort: medium, timeout: 45m,
+            context: [event_payload, event_scripts, popto_help, popto_help_images]}
+      tell: needed
+      priority: 1
+    - id: image-qa
+      name: 图文质检
+      instruction: 图文出图后逐张检查：截图有没有露出积分余额、账号、手机号，文字和稿子是否一致、看不看得清；通过才进发布包，不通过逐条打回。审查者不能是出图的 Agent。
+      when: {types: [content.images.ready]}
+      run: {role: review, agent: codex, skill: ops-image-qa, tools: readonly, timeout: 15m,
+            conclude_with: [content.qa.passed, content.images.rework],
+            context: [event_payload, event_media, event_scripts]}
+      max_rounds: 3
+      tell: needed
+      priority: 1
     - id: publish-pack
       name: 发布包
       instruction: 质检通过后为各平台生成发布包（标题、文案、话题、封面、发布时间建议）。只生成，不发布。
       when: {types: [content.qa.passed]}
-      run: {role: write, agent: claude, skill: ops-publish-pack, tools: workspace, timeout: 15m, context: [event_payload]}
+      run: {role: write, agent: claude, skill: ops-publish-pack, tools: workspace, timeout: 15m, context: [event_payload, event_scripts]}
       tell: never
       priority: 1
     - id: pack-register
       name: 发布包入库（等 17:00 批量卡片）
-      instruction: 发布包就绪时登记入库，等 17:00 的批量发布卡片。
+      instruction: 发布包就绪时登记入库，等 17:00 的批量发布卡片；17:00 的卡片已经发过、这批里又有今天要发的，入库时直接补发一张待发布卡片。
       when: {types: [content.pack.ready]}
       run: {executor: script, command: ["{python}", "-m", "superops.biz.executors.publish", "register"], timeout: 2m}
       tell: never
@@ -445,5 +472,5 @@ policy:
     - id: pipeline-notes
       name: 其余流水线事件只留底
       instruction: 这些事件由订阅送到负责的工单，这里只留底进日报。
-      when: {types: [content.media.rework, content.compliance.failed, content.compliance.passed, content.qa.failed, content.topic.suggested]}
+      when: {types: [content.media.rework, content.images.rework, content.compliance.failed, content.compliance.passed, content.qa.failed, content.topic.suggested]}
       run: {executor: none}

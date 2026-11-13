@@ -14,6 +14,9 @@ description: Popto 产品运营研发多 Agent 系统 · 发布包。质检通�
    `media` 里写的是 `pack/<content_id>/` 目录下的文件名（没有的项不写）：发布脚本和“请手动发布”的附件都按 `media.video` / `media.cover` / `media.images` 这三个键找文件，写成别的键名它们找不到素材。
    发布时间：`per_platform.<platform>.scheduled_at` 写计划发布的时间（带时区的 ISO 时间）。自动发布时，人批准后离这个时间还来得及就用平台的“定时发布”定在这一刻，来不及（已过或不足 30 分钟）就立即发布；想要“一批准就发、不等时间”，在该平台下加 `publish_timing: "immediate"`。有现成的 4:3 横封面时文件名写进 `media.cover_horizontal`（没有也行，抖音的横封面会由竖封面自动生成）。
    起点事件的 data 里带 `is_test: true`（和 `test_note`）时原样写进 `meta.json` 顶层：测试内容最多试运行，不会真发。
+   图文（起点事件来自图文质检，`data.images` 是按页序的图片路径）：把图片按页序拷进 `pack/<content_id>/`，文件名保持 `p01.png`、`p02.png`……，
+   `media.images` 按页序列出，第一张同时写进 `media.cover`；不写 `media.video`。`data.scheduled_at` 有值就用它做 `per_platform.<platform>.scheduled_at`
+   （人批准的“今天发”），标题和正文取稿子里的（`data.script_paths`），稿子给了几个标题备选就挑第一个。小红书的发布器会发图文（最多 18 张）；别的平台的图文批准后转人工发。
    写 `tracking.json`：渠道码 / 短链、srcreg、content_id。
 2. 每条内容一个独立渠道码（格式 `pt_<content_id>_<平台缩写>`），主页链接、评论置顶、公众号阅读原文都带这个码。
 3. 发布时间按平台建议时段：抖音 12:00 或 18:00–21:00，视频号 7:00–9:00 或 20:00–22:00，小红书 12:00 / 20:00，快手 18:00–22:00，B站周五 / 周末晚，公众号周二 / 周四 20:00。

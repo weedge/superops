@@ -63,15 +63,39 @@ def cmd_register() -> None:
                  pm.get("scheduled_at") or d.get("scheduled_at"), d.get("pack_dir"), pm.get("publish_mode") or "semi_auto",
                  iso(), iso()))
             ids.append(pid)
+    # 17:00 的批量卡片已经发过、这批里又有今天要发的（人上午批了“今天发”，出图和质检拖到了傍晚）：
+    # 现在就补一张待发布卡片，不等明天的 17:00
+    t = now()
+    today = t.date().isoformat()
+    due = [pid for pid in ids if (lambda r: r and str(r[0] or today)[:10] <= today)(
+        ops.execute("SELECT scheduled_at FROM publish_packs WHERE id=?", (pid,)).fetchone())]
+    if due and t.hour >= BATCH_CARD_HOUR:
+        packs, card = build_batch_card(ops)
+        if card:
+            ops.commit()
+            emit_result(f"登记 {len(ids)} 个发布包；今天的 17:00 卡片已经发过，现在补发待发布卡片（{len(packs)} 条）", packs=ids,
+                        status="needs_decision", needs_decision=True, decision_card=card)
+            return
     emit_result(f"登记 {len(ids)} 个发布包，等 17:00 统一发卡片" if ids else "事件里没有发布包信息", packs=ids)
+
+
+BATCH_CARD_HOUR = 17        # schedules.yaml 的 cron.publish_batch_card
 
 
 def cmd_batch_card() -> None:
     ops = db.open_ops()
-    packs = db.rows(ops.execute("SELECT * FROM publish_packs WHERE status='ready' ORDER BY scheduled_at, platform"))
-    if not packs:
+    packs, card = build_batch_card(ops)
+    if not card:
         emit_result("今晚没有待发布内容")
         return
+    emit_result(f"今晚 {len(packs)} 条待发布，已生成批量卡片", status="needs_decision", needs_decision=True, decision_card=card)
+
+
+def build_batch_card(ops) -> tuple[list[dict], dict | None]:
+    """待批准（status=ready）的发布包做成一张批量卡片，并把它们标成 carded。没有待发布的返回 ([], None)。"""
+    packs = db.rows(ops.execute("SELECT * FROM publish_packs WHERE status='ready' ORDER BY scheduled_at, platform"))
+    if not packs:
+        return [], None
     from ..config import load_agents_config
 
     cfg = load_agents_config()
@@ -132,7 +156,7 @@ def cmd_batch_card() -> None:
         "links": sorted({p["pack_dir"] for p in packs if p["pack_dir"]})[:5],
     }
     ops.executemany("UPDATE publish_packs SET status='carded', updated_at=? WHERE id=?", [(iso(), p["id"]) for p in packs])
-    emit_result(f"今晚 {len(packs)} 条待发布，已生成批量卡片", status="needs_decision", needs_decision=True, decision_card=card)
+    return packs, card
 
 
 def _per_platform(meta: dict, platform: str) -> dict:
@@ -158,12 +182,26 @@ def _pack_files(p: dict, meta: dict) -> list[Path]:
     return out
 
 
+IMAGE_POST_PLATFORMS = {"xiaohongshu"}     # 自动发布器会发图文的平台；别的平台的图文直接走人工
+
+
+def image_only(meta: dict, platform: str | None = None) -> bool:
+    """只有图片、没有视频的发布包，而且这个平台的自动发布器还不会发图文（目前只有小红书会）：直接走人工。
+    platform 不给时只看是不是图文。"""
+    media = meta.get("media") or {}
+    images = not media.get("video") and bool(media.get("images"))
+    return images and (platform is None or platform not in IMAGE_POST_PLATFORMS)
+
+
 def _manual_instructions(p: dict, meta: dict) -> str:
     pm = _per_platform(meta, p["platform"])
     lines = []
     if meta.get("is_test"):
         lines.append(f"> ⚠️ **测试内容，不要真的发布**：{meta.get('test_note') or ''}")
     lines.append(f"**{PLATFORM_LABEL.get(p['platform'], p['platform'])} · {p['title'] or p['content_id']}**（`{p['id']}`）")
+    if image_only(meta):
+        n = len((meta.get("media") or {}).get("images") or [])
+        lines.append(f"- 图文（{n} 张图）：按顺序上传下面的图片、复制正文，到官方发布页发")
     for k, label in (("account", "账号"), ("scheduled_at", "时间"), ("title", "标题")):
         v = pm.get(k) or meta.get(k)
         if v:
@@ -219,7 +257,7 @@ def publish_one(ops, ledger, hub, cfg, pack_id: str, approved_at: str | None, *,
     meta = _pack_meta(p["pack_dir"])
     mode = _publisher_mode(cfg, p["platform"], meta)
     label = PLATFORM_LABEL.get(p["platform"], p["platform"])
-    if mode in ("dry_run", "live", "draft") and pubs.module_for(p["platform"]):
+    if mode in ("dry_run", "live", "draft") and pubs.module_for(p["platform"]) and not image_only(meta, p["platform"]):
         r = None
         doing = {"dry_run": "发布试运行", "draft": "存草稿"}.get(mode, "发布")
         try:

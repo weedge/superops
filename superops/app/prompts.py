@@ -193,7 +193,11 @@ REPORT_GUIDE = """只输出一个 JSON 对象（不要代码块标记、不要�
   `failed`（失败）、`dropped`（没有需要人处理的事，安静结束）。不确定选 `waiting` 还是 `ready`：还要等别的事件回来就是 `waiting`。
 - `summary`：一句话结论（进日报）。`message`：要给人看的正文（Markdown，可省）。
 - `question`：需要人决定时写 `{"text": "一个具体的问题", "card": {...}}`；`card` 是带选项的批红卡片
-  （title / proposal / reasons / risks / items / options / on_expire），选项里的 `emit` 是人选中后才会发出的事件。
+  （title / proposal / reasons / risks / items / options / on_expire；`reasons`、`risks` 是字符串数组），选项里的 `emit` 是人选中后才会发出的事件。
+  选项要能推进事情：人选了以后要发生什么，就把对应的事件写进 `emit`，只写一句“今天发它”而不带事件，人批了也什么都不会发生。常用的：
+  今天（或某天）发一篇已写稿、合规已过的图文 → `"emit": [{"type": "content.images.requested", "subject": "content:<content_id>",
+  "data": {"content_id", "platforms": ["xiaohongshu"], "publish_date": "YYYY-MM-DD", "scheduled_at": "<带时区的 ISO 时间>"}}]`（`emit` 是数组；宿主出图、质检、
+  生成发布包，进 17:00 的待发布卡片）；排进写稿 → `content.topic.approved`；批准需求去开发 → `demand.approved`。
   不需要问就省略；之前的问题已解决就写 `null`。有问题时 `state` 不能是 `ready`。
 - `ack`：对范围内的人的请求确认一次 `[{"trigger_id", "text"}]`；`answer`：回答人的提问 `{"trigger_id", "text"}`；
   `handback`：超出这张工单的人的请求交还 `[{"trigger_id", "reason"}]`，不要确认它。

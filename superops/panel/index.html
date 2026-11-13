@@ -527,6 +527,17 @@ a.pill:hover { text-decoration: none; filter: brightness(1.08); }
 .citem-m span { margin-right: auto; }
 .citem-m i { width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--pc); }
 .citem-m i.done { background: var(--pc); box-shadow: 0 0 6px var(--pc); }
+.citem { position: relative; cursor: grab; }
+.citem.dragging { opacity: .4; }
+.citem-a { display: none; gap: 4px; margin-top: 5px; flex-wrap: wrap; }
+.citem:hover .citem-a, .citem:focus-within .citem-a { display: flex; }
+.cbtn { padding: 1px 7px; border: 1px solid var(--line); border-radius: 5px; background: rgba(255, 255, 255, .04); color: var(--muted); font: inherit; font-size: 11px; line-height: 18px; cursor: pointer; }
+.cbtn:hover:not([disabled]) { color: var(--text); border-color: var(--line2); }
+.cbtn.pub:not([disabled]) { color: #fff; background: var(--c-orange); border-color: var(--c-orange); }
+.cbtn.del:hover { color: var(--bad); border-color: var(--bad-line); }
+.cbtn[disabled] { opacity: .45; cursor: not-allowed; }
+.cday.drop-on { background: rgba(56, 208, 232, .08); box-shadow: inset 0 0 0 2px var(--c-cyan); }
+@media (hover: none) { .citem-a { display: flex; } }
 @media (max-width: 900px) {
   .pcards, .acards { grid-template-columns: minmax(0, 1fr); }
   .pcard-b { grid-template-columns: 80px minmax(0, 1fr); } .pcover { height: 106px; }
@@ -1285,8 +1296,9 @@ function journeyStages(tr, tk) {
   const t0 = parseTime(tr.at), out = [];
   const isNew = !!(tk && tk.decision && (tk.decision.trigger_ids || []).includes(tr.id));
   const near = (at) => { const d = parseTime(at); return d && t0 && d.getTime() >= t0.getTime() - 60000; };
-  const asg = tk ? (tk.assignments || []).filter((a) => isNew || near(a.created_at || a.started_at)) : [];
-  const runs = tk ? (tk.runs || []).filter((r) => asg.some((a) => a.id === r.assignment)) : [];
+  /* 新开的工单看全部；送到已有工单的（跟进、批红）只看这句话之后的运行，和这些运行所在的派工（批红那一轮常常还是原来那次派工） */
+  const runs = tk ? (tk.runs || []).filter((r) => isNew || near(r.started_at)) : [];
+  const asg = tk ? (tk.assignments || []).filter((a) => isNew || near(a.created_at || a.started_at) || runs.some((r) => r.assignment === a.id)) : [];
   const msgs = tk ? (tk.messages || []).filter((m) => isNew || near(m.at)) : [];
   const via = { mention: '@机器人', direct: '直接对 Agent 说', none: '没 @' }[tr.addressed] || '';
   out.push({ title: '你发出', at: tr.at, main: `${sourceTitle(tr.source)}${via ? ' · ' + via : ''}`, body: tr.text, data: '原话 · 发送人 ID · 会话', state: 'done',
@@ -1317,7 +1329,7 @@ function journeyStages(tr, tk) {
   out.push({ title: '执行器 → Agent', at: last && last.started_at, main: runs.length ? runLine : tk.executor === 'script' ? '脚本' : last ? '排队等执行位 / Agent' : '还没派工',
     body: tk.executor === 'script' ? '确定性脚本：不用大模型，按步骤办事' : '提示词 = 工单卡片 + Skill + 相关决定 + 上下文文件；同一张工单续接同一段会话',
     data: '派工 → 运行 {Agent, 会话, 耗时, 费用}', table: 'ticket（派工）· run', state: !last ? 'wait' : working ? 'live' : 'done' });
-  const rep = last && last.report;
+  const rep = last && last.report && (isNew || near(last.report.at)) ? last.report : null;
   out.push({ title: '报告', at: rep && rep.at, main: rep ? (REPORT_STATE[rep.state] || rep.state) : '等这一轮跑完', body: rep ? rep.summary : '', data: '报告 JSON {state, summary, message, question, events}', table: 'ticket',
     state: rep ? (['blocked', 'failed'].includes(rep.state) ? 'stop' : 'done') : working ? 'live' : 'wait' });
   const sent = msgs.filter((m) => m.status === 'sent');
@@ -2078,14 +2090,23 @@ function calendarView(c) {
     if (!weeks.length || weeks[weeks.length - 1].length === 7) { if (d > last && weeks.length) break; weeks.push([]); }
     weeks[weeks.length - 1].push(ymd(d));
   }
-  const cell = (day) => `<div class="cday${day === today ? ' today' : ''}${items[day] ? '' : ' empty'}"><div class="cday-d">${day.slice(5)}${day === today ? ' <b>今天</b>' : ''}</div>
-    ${(items[day] || []).map((x) => `<div class="citem${PILLARS[x.pillar] ? ` pl pl-${esc(x.pillar)}` : ''}" title="${esc(x.topic || x.id)}"><div class="citem-t">${esc(x.topic || x.id)}</div>
-      <div class="citem-m"><span>${esc(bl(x.status))}</span>${(x.packs || []).map((p2) => `<i title="${esc(bl(p2.platform))} ${esc(bl(p2.status))}" style="--pc:${PLATFORM_COLOR[p2.platform] || 'var(--c-cyan)'}" class="${p2.status === 'published' ? 'done' : ''}"></i>`).join('')}</div></div>`).join('')}</div>`;
+  /* 卡片：可以拖到别的日期；鼠标移上去有“发布 / 改日期 / 删除”（发布只对写好稿、还没进发布流程的图文，置灰时悬停看原因） */
+  const card = (x) => {
+    const pub = x.publish || {}, t = esc(x.topic || x.id);
+    return `<div class="citem${PILLARS[x.pillar] ? ` pl pl-${esc(x.pillar)}` : ''}" draggable="true" data-cid="${esc(x.id)}" data-date="${esc(x.date || '')}" title="${t}（${esc(x.id)}）：拖到别的日期可以改计划日">
+      <div class="citem-t">${t}</div>
+      <div class="citem-m"><span>${esc(bl(x.status))}</span>${(x.packs || []).map((p2) => `<i title="${esc(bl(p2.platform))} ${esc(bl(p2.status))}" style="--pc:${PLATFORM_COLOR[p2.platform] || 'var(--c-cyan)'}" class="${p2.status === 'published' ? 'done' : ''}"></i>`).join('')}</div>
+      <div class="citem-a"><button class="cbtn pub" data-act="cal-publish" data-id="${esc(x.id)}" data-title="${t}" data-date="${esc(x.date || '')}"${pub.ok ? ` title="出图 → 质检 → 发布包 → 待发布卡片"` : ` disabled title="${esc(pub.why || '')}"`}>发布</button>
+        <button class="cbtn" data-act="cal-move" data-id="${esc(x.id)}" data-title="${t}" data-date="${esc(x.date || '')}">改日期</button>
+        <button class="cbtn del" data-act="cal-delete" data-id="${esc(x.id)}" data-title="${t}">删除</button></div></div>`;
+  };
+  const cell = (day) => `<div class="cday${day === today ? ' today' : ''}${items[day] ? '' : ' empty'}" data-day="${day}"><div class="cday-d">${day.slice(5)}${day === today ? ' <b>今天</b>' : ''}</div>
+    ${(items[day] || []).map(card).join('')}</div>`;
   const grid = `<div class="cal"><div class="cal-h">${['周一', '周二', '周三', '周四', '周五', '周六', '周日'].map((w) => `<span>${w}</span>`).join('')}</div>${weeks.map((w) => `<div class="cal-w">${w.map(cell).join('')}</div>`).join('')}</div>`;
   const dists = `<div class="dgrid3"><div class="panel"><div class="ptitle-s">状态</div>${hbars(c.status, ['var(--c-cyan)', 'var(--c-green)', 'var(--c-yellow)', 'var(--c-purple)', 'var(--c-orange)', 'var(--c-pink)'])}</div>
     <div class="panel"><div class="ptitle-s">内容支柱</div>${hbars((c.pillars || []).map((i) => ({ ...i, label: pl(i.label) })), ['#f76b15', '#3e63dd', '#12a594', '#8e4ec6', '#e93d82', '#d4a017'])}</div>
     <div class="panel"><div class="ptitle-s">人群</div>${hbars((c.personas || []).slice(0, 6), ['var(--c-blue)', 'var(--c-pink)', 'var(--c-yellow)', 'var(--c-green)', 'var(--c-purple)', 'var(--c-cyan)'])}</div></div>`;
-  return `<section class="sec"><h2>内容日历 <span class="cnt">${num(c.total)}</span><span class="hint">平时每周五 15:00 自动排下周；排好后发卡片等你批，批了才写稿。格子里的小点是各平台发布包，实心是已发布</span>
+  return `<section class="sec"><h2>内容日历 <span class="cnt">${num(c.total)}</span><span class="hint">平时每周五 15:00 自动排下周；排好后发卡片等你批，批了才写稿。拖动卡片改日期，鼠标移到卡片上可以发布、改日期、删除。小点是各平台发布包，实心是已发布</span>
       <button class="btn primary" style="margin-left:auto" data-act="plan-topics">立即排选题…</button></h2>${grid}${c.undated ? `<div class="hint" style="margin:8px 2px 0">另有 ${c.undated} 条没有计划日</div>` : ''}</section>
     <section class="sec">${dists}</section>`;
 }
@@ -2548,7 +2569,7 @@ function render(force) {
   renderHeader();
   const view = $('#view'), r = S.route;
   const typing = document.activeElement && view.contains(document.activeElement) && /^(TEXTAREA|INPUT)$/.test(document.activeElement.tagName);
-  if (typing && !force) { S.dirty = true; return; }   /* 人在输入时不换 DOM（输入法组字会被打断），失焦后再补 */
+  if ((typing || S.dragging) && !force) { S.dirty = true; return; }   /* 人在输入或拖卡片时不换 DOM，结束后再补 */
   S.dirty = false;
   let html;
   if (S.dataKey !== r.key) html = S.missing ? `<div class="empty">${esc(S.missing)}。<a href="#/overview">回总览</a></div>` : `<div class="empty">${S.err ? '还没取到数据' : '加载中…'}</div>`;
@@ -2753,6 +2774,25 @@ const ACTIONS = {
     const ok = await ask({ title: `已经用品牌号给「${b.dataset.name}」发了评论？`, ok: '登记已发', body: '<p>登记成“评论已发出”，挪到“已评论”栏；系统之后不会再自动发这条。</p>' });
     if (ok) act(b, () => post('/api/leads', { action: 'commented', id: b.dataset.id }), '已登记，挪到“已评论”');
   },
+  async 'cal-publish'(b) {
+    const ok = await ask({ title: `发布「${b.dataset.title}」？`, ok: '发布',
+      body: `<p>等于在“今天发哪篇”卡片上批了它：自动出图（按稿子逐页排版、用帮助文档截图）→ 图文质检 → 发布包 → 待发布卡片，大约 30–60 分钟。</p>
+        <p>${b.dataset.date && b.dataset.date < new Date().toISOString().slice(0, 10) ? '计划日已经过了，按<b>今天</b>发；' : `按计划日 ${esc(b.dataset.date)} 发；`}计划时间 20:00（来不及就顺延）。批准发布后小红书按它的发布模式执行（现在是存草稿）。</p>` });
+    if (ok) act(b, () => post('/api/contents', { action: 'publish', id: b.dataset.id, confirm: true }), (r) => `已安排 ${r && r.date ? r.date.slice(5) : ''} 发布「${b.dataset.title}」，开始出图`);
+  },
+  async 'cal-move'(b) {
+    const ok = await ask({ title: `「${b.dataset.title}」改到哪天？`, ok: '改日期', body: '<p>也可以直接把卡片拖到那一天。还没批的发布包，计划时间会跟着挪。</p>',
+      input: { label: '日期（YYYY-MM-DD）', placeholder: b.dataset.date || '2026-11-20' } });
+    if (!ok) return;
+    const day = (ok.value || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) { toast('日期要写成 2026-11-20 这样', 'bad'); return; }
+    act(b, () => post('/api/contents', { action: 'move', id: b.dataset.id, date: day }), `已改到 ${day.slice(5)}`);
+  },
+  async 'cal-delete'(b) {
+    const ok = await ask({ title: `删除「${b.dataset.title}」？`, ok: '删除', danger: true,
+      body: '<p>从日历上去掉（记成“已删除”，不真删记录）；还没批的发布包一起作废。已经在发布或已经发了的不能删。</p>' });
+    if (ok) act(b, () => post('/api/contents', { action: 'delete', id: b.dataset.id, confirm: true }), '已从日历上删除');
+  },
   async 'term-add'(b) {
     const ok = await ask({ title: '添加监听意图词', ok: '添加', body: '<p>下一次社媒监听（每天 14:00）开始按这个词去各平台搜近 24 小时的内容。删掉过的词再加一次就恢复。</p>',
       input: { label: '词', placeholder: '例如：保险团队长怎么带新人' }, select: { label: '类别', options: Object.entries(TERM_CAT) } });
@@ -2876,6 +2916,36 @@ document.addEventListener('keydown', (e) => {
     const b = e.target.closest('.form').querySelector('[data-act="form-submit"]');
     if (b) { e.preventDefault(); submitForm(b); }
   }
+});
+/* 内容日历：把卡片拖到另一天就改计划日 */
+document.addEventListener('dragstart', (e) => {
+  const el = e.target.closest && e.target.closest('.citem[data-cid]');
+  if (!el) return;
+  S.dragging = el.dataset.cid;
+  el.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', el.dataset.cid);
+});
+document.addEventListener('dragover', (e) => {
+  const day = S.dragging && e.target.closest && e.target.closest('.cday[data-day]');
+  if (!day) return;
+  e.preventDefault();
+  document.querySelectorAll('.cday.drop-on').forEach((d) => d !== day && d.classList.remove('drop-on'));
+  day.classList.add('drop-on');
+});
+document.addEventListener('drop', (e) => {
+  const day = S.dragging && e.target.closest && e.target.closest('.cday[data-day]');
+  if (!day) return;
+  e.preventDefault();
+  const id = S.dragging, from = (document.querySelector(`.citem[data-cid="${CSS.escape(id)}"]`) || {}).dataset || {};
+  S.dragging = null;
+  day.classList.remove('drop-on');
+  if (day.dataset.day !== from.date) act(null, () => post('/api/contents', { action: 'move', id, date: day.dataset.day }), `已改到 ${day.dataset.day.slice(5)}`);
+});
+document.addEventListener('dragend', () => {
+  S.dragging = null;
+  document.querySelectorAll('.citem.dragging, .cday.drop-on').forEach((el) => el.classList.remove('dragging', 'drop-on'));
+  if (S.dirty) render();
 });
 document.addEventListener('toggle', (e) => { const k = e.target.dataset && e.target.dataset.k; if (k) S.ui.open[k] = e.target.open; }, true);
 document.addEventListener('focusout', () => setTimeout(() => { if (S.dirty) render(); }, 0));

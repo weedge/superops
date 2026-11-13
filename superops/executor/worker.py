@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import logging
 import threading
 import time
@@ -323,7 +324,8 @@ class TicketExecutor:
         ctx = bizcontext.ContextBuilder(rt.local_client, work_dir)
         wt, cwd, extra_dirs = None, work_dir, []
         browser = tools == "browser" and agent_browser.settings(rt.cfg)["enabled"]
-        benv = {**agent_env(rt.cfg), "OPS_RUN_DIR": str(work_dir)}
+        benv = {**agent_env(rt.cfg), "OPS_RUN_DIR": str(work_dir),
+                "OPS_RENDER": f"{sys.executable} -m superops.biz.render_pages"}     # 图文出图：HTML 页面截成图
         if browser:
             self.browser_lock.acquire()
         try:

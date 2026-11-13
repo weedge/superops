@@ -1,4 +1,4 @@
-"""小红书创作服务平台发布（creator.xiaohongshu.com，视频笔记）。
+"""小红书创作服务平台发布（creator.xiaohongshu.com，视频笔记和图文笔记）。
 
 页面要点（2026-11-10 实测）：
 - /publish/publish?source=official 默认“上传视频”页签，有 input[type=file]（视频）；
@@ -10,6 +10,9 @@
 - 底部“暂存离开”“发布”（2026-11-11 起是自定义组件 `<xhs-publish-btn>`，按钮在封闭的 shadow DOM 里，Playwright 定位不到；
   组件属性 `submit-text` 是按钮文字、`submit-disabled` 表示能不能点。用 Chrome 调试接口取按钮坐标再点，见 `_click_submit`）；
   视频上传中时“发布”是灰的。
+- 图文：同一个发布页切到“上传图文”页签（`div.creator-tab`，可能被引导弹层 `div.d-popover` 挡住，先移掉），
+  第一张图用 `.upload-input`，后面的用 `input[type=file]`，每张等 `.img-preview-area .pr` 多出一个预览（最多 18 张）；
+  之后的标题、正文、话题、声明、定时、暂存 / 发布和视频笔记是同一个表单（切页签和上传的写法移植自 Easel 的 xhs_publish.py）。
 """
 from __future__ import annotations
 
@@ -27,6 +30,45 @@ URL = "https://creator.xiaohongshu.com/publish/publish?source=official"
 TITLE_PH = "填写标题会有更多赞哦"
 VERIFY_TEXT = "扫码验证"
 DONE_URL = re.compile(r".*/publish/success.*|.*/new/note-manager.*")
+MAX_IMAGES = 18
+IMAGE_TAB = "上传图文"
+
+
+def _click_tab(page, name: str) -> None:
+    """点“上传图文 / 上传视频”页签：被引导弹层挡住就移掉弹层再点，15 秒内找不到就报错（Easel mustClickPublishTab 的写法）。"""
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        for tab in page.query_selector_all("div.creator-tab"):
+            try:
+                if not tab.is_visible() or (tab.inner_text() or "").strip() != name:
+                    continue
+                blocked = tab.evaluate("""(el) => { const r = el.getBoundingClientRect(); if (!r.width || !r.height) return true;
+                    const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !(t === el || el.contains(t)); }""")
+            except Exception:  # noqa: BLE001
+                continue
+            if blocked:
+                for cover in page.query_selector_all("div.d-popover"):
+                    cover.evaluate("el => el.remove()")
+                page.wait_for_timeout(300)
+                continue
+            tab.click()
+            page.wait_for_timeout(1200)
+            return
+        page.wait_for_timeout(300)
+    raise PublishError(f"发布页上没找到「{name}」页签（页面可能改版了）")
+
+
+def _upload_images(page, images: list[str]) -> None:
+    """按页序逐张上传，每张等预览出来（最多 60 秒一张）。"""
+    for i, path in enumerate(images):
+        field = page.locator(".upload-input").first if i == 0 and page.locator(".upload-input").count() else page.locator("input[type=file]").first
+        field.set_input_files(path)
+        deadline = time.time() + 60
+        while len(page.query_selector_all(".img-preview-area .pr")) < i + 1:
+            if time.time() > deadline:
+                raise PublishError(f"第 {i + 1} 张图片上传超时（60 秒）：{Path(path).name}")
+            page.wait_for_timeout(500)
+        page.wait_for_timeout(800)
 
 
 def _wait_published(page, shots: Path, res: PublishResult, *, headless: bool, retry_submit) -> None:
@@ -121,18 +163,28 @@ def _set_time(page, when) -> None:
 
 def publish(pack: dict, meta: dict, *, dry_run: bool, shots: Path, headless: bool = True, draft: bool = False) -> PublishResult:
     res = PublishResult(ok=False, dry_run=dry_run)
-    video = Path(pack["video"] or "")
-    if not video.is_file():
+    video = Path(pack.get("video") or "")
+    images = [str(x) for x in pack.get("images") or [] if Path(x).is_file()]
+    if pack.get("video") and not video.is_file():
         raise PublishError(f"视频不存在：{video}")
+    if not pack.get("video") and not images:
+        raise PublishError("发布包里既没有视频也没有图片")
+    if not pack.get("video") and len(images) > MAX_IMAGES:
+        raise PublishError(f"小红书图文最多 {MAX_IMAGES} 张，这个发布包有 {len(images)} 张")
     with browser("xiaohongshu", headless=headless, error_shots=shots) as ctx:
         page = ctx.new_page()
         try:
-            open_until(page, URL, lambda: page.get_by_text("拖拽视频到此或点击上传"), what="上传视频")
+            open_until(page, URL, lambda: page.get_by_text("拖拽视频到此或点击上传"), what="发布页")
         except PublishError:
             if "login" in page.url:
                 raise NotLoggedIn("小红书登录已失效：运行 superops publish login xiaohongshu 重新扫码")
             raise
-        page.locator("input[type=file]").first.set_input_files(str(video))
+        if pack.get("video"):
+            page.locator("input[type=file]").first.set_input_files(str(video))
+        else:                                        # 图文：切到“上传图文”，按页序逐张传
+            _click_tab(page, IMAGE_TAB)
+            _upload_images(page, images)
+            res.notes.append(f"图文：已按页序上传 {len(images)} 张图")
         page.get_by_placeholder(TITLE_PH).wait_for(timeout=120000)
         page.wait_for_timeout(2500)
         for t in ("我知道了",):
@@ -179,7 +231,7 @@ def publish(pack: dict, meta: dict, *, dry_run: bool, shots: Path, headless: boo
             except Exception as e:  # noqa: BLE001
                 res.notes.append(f"⚠️ AI 声明没设置成功：{str(e)[:120]}")
                 page.keyboard.press("Escape")
-        res.notes.append("封面用视频第一帧（平台默认）")
+        res.notes.append("封面用视频第一帧（平台默认）" if pack.get("video") else "封面用第一张图（平台默认）")
 
         # 等视频上传完（“上传中”消失）
         deadline = time.time() + UPLOAD_WAIT_S

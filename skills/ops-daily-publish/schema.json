@@ -1,0 +1,40 @@
+{
+  "description": "今日发布推荐",
+  "required": [
+    "today"
+  ],
+  "properties": {
+    "today": {
+      "type": "string"
+    },
+    "in_flow": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "content_id"
+        ],
+        "properties": {
+          "content_id": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

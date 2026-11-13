@@ -260,6 +260,8 @@ flowchart TB
 | `superops/biz/context.py` | `ContextBuilder`（上下文提供者）、不可信内容的隔离区、Skill 正文的读取、脚本路径的解析 |
 | `superops/biz/ingest.py` | Agent 的结构化产出 → `ops.db`，按 Skill 分 |
 | `superops/biz/redact.py` | 打码：文本、JSON、目录 |
+| `superops/biz/contents.py` | 内容的公共小工具：计划日（面板挪过的 planned_date，否则按内容 ID 里的日期）、稿子在哪是图文还是视频、能走自动出图的稿子；日历、今日发布推荐和 `/api/contents` 共用 |
+| `superops/biz/render_pages.py` | 图文出图的渲染工具（Agent 环境里的 `$OPS_RENDER`）：一组 HTML 页面用本机 Chrome 无界面、断网截成固定尺寸的 PNG（默认 1080×1440），报出没加载出来的图片 |
 | `superops/biz/retention.py` | 数据保留期清理、日志轮转、补打码 |
 | `superops/biz/bizviews.py` | 业务统计（面板的业务页）、决策档案的条目 |
 | `superops/biz/agent_browser.py` | Agent 专用浏览器 `ops-browser`：包装、拦截、登录 |
@@ -283,7 +285,7 @@ flowchart TB
 | `superops/biz/executors/publishers/__main__.py` | 发布前的登录检查 |
 | `superops/biz/executors/publishers/douyin.py` | 抖音发布：先等视频传完再设竖 / 横封面、跳到作品管理页后等后台上传完、短信验证、存草稿（只有一个暂存位，被占就不覆盖） |
 | `superops/biz/executors/publishers/channels.py` | 视频号发布：转 H.264、等上传完再点发表、表单里声明原创、保存草稿 |
-| `superops/biz/executors/publishers/xiaohongshu.py` | 小红书发布：封闭 shadow DOM 里的发布 / 暂存离开按钮按坐标点、扫码验证 |
+| `superops/biz/executors/publishers/xiaohongshu.py` | 小红书发布：视频笔记和图文笔记（切“上传图文”页签、被引导弹层挡住先移掉、按页序逐张传图等预览，最多 18 张）、封闭 shadow DOM 里的发布 / 暂存离开按钮按坐标点、扫码验证 |
 | `superops/biz/executors/reply.py` | 已批准的评论回复 |
 | `superops/biz/executors/leads.py` | 线索卡片（跟进并发评论 / 只记待跟进 / 都不跟进）、跟进登记、批准后逐条发评论（每日上限、不重发） |
 | `superops/biz/executors/comment.py` | 用品牌号在作品下发一条评论：发前硬检查（长度、链接、联系方式），抖音网页版评论框操作与发出确认，验证码转人工 |
@@ -316,6 +318,7 @@ flowchart TB
 | `tests/app/test_sources.py` | 定时来源（到点、补发、`max_late`、`requires`）和流水线来源（去重、线程、批准守门、防抖、线程关闭、内部事件） |
 | `tests/app/test_publishing.py` | 面板发布台：发布包预览按平台取文案和素材、媒体下载口拒绝目录外和非媒体文件、批准发布要确认且只批没发的、人工登记校验链接、浏览器动作同一平台只跑一个、退出登录挪走登录目录 |
 | `tests/app/test_qrlogin.py` | 网页扫码登录：七个平台的账号列表（只管账号的四个没有发布模式、不进发布、没有草稿箱）、四个新平台的登录判断和身份解析、状态文件和验证码文件、过时的中途状态判出错、二维码只在等扫码时给、验证码只在要时收、扫码登录读回昵称粉丝数和头像、取消能停掉登录进程且不记成失败、退出登录清掉头像和扫码状态、三个平台身份接口的解析 |
+| `tests/app/test_contents_action.py` | 内容日历：挪日期（还没批的发布包跟着挪）、删除要确认且在发布 / 已发的不让删、发布要确认且只对写好稿的图文（发出带凭据的 content.images.requested，计划日已过就今天发） |
 | `tests/app/test_demands_action.py` | 面板需求池：批准开发要确认、发出带人工批准凭据的 `demand.approved` 且只批没批过的、观察 / 搁置要原因 / 恢复、提新需求走 `demand.manual` |
 | `tests/app/test_leads_action.py` | 面板跟进看板：改跟进阶段只认四个阶段、可从归档拉回、登记自己发了评论（挪到已评论、不发事件、不重复登记）、获客视图的监听漏斗 |
 | `tests/app/test_panel.py` | 面板页面不依赖浏览器的检查：单文件、不引外部资源、由 `GET /` 送出、只调用存在的接口 |

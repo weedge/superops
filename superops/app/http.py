@@ -211,6 +211,75 @@ def demands_action(rt, body: dict) -> dict:
         ops.close()
 
 
+def contents_action(rt, body: dict) -> dict:
+    """内容日历上人做的事。
+    move：挪到另一天（改计划发布日；还没批的发布包的计划时间跟着挪到那天，时刻不变）。
+    delete：从日历上删掉（状态记成 deleted，不真删；已经在发布、已经发了的不让删；还没批的发布包一起作废）。要 confirm。
+    publish：等于在“今天发哪篇”卡片上批了它——发出带人工批准凭据的 content.images.requested，出图 → 质检 → 发布包 → 待发布卡片。
+    只对写好稿的图文；要 confirm。"""
+    from datetime import datetime, timedelta
+
+    from ..biz import db as bizdb
+    from ..biz.contents import DATE, image_scripts, planned_date
+    from ..biz.timeutil import TZ, now
+    from ..core.model import now_iso
+    action, cid, by = str(body.get("action") or ""), str(body.get("id") or ""), str(body.get("by") or "panel")
+    ops = bizdb.open_ops()
+    try:
+        row = ops.execute("SELECT * FROM contents WHERE id=? AND removed_at IS NULL", (cid,)).fetchone()
+        if not row:
+            raise ApiError(404, f"没有内容 {cid}")
+        c = dict(row)
+        packs = bizdb.rows(ops.execute("SELECT id, platform, status, scheduled_at FROM publish_packs WHERE content_id=?", (cid,)))
+        at = now_iso()
+        if action == "move":
+            day = str(body.get("date") or "")
+            if not DATE.fullmatch(day):
+                raise ApiError(400, "日期要写成 YYYY-MM-DD")
+            ops.execute("UPDATE contents SET planned_date=? WHERE id=?", (day, cid))
+            for pk in packs:                       # 还没批的发布包：计划时间挪到新的那天，时刻不变
+                if pk["status"] in ("ready", "carded") and pk["scheduled_at"]:
+                    ops.execute("UPDATE publish_packs SET scheduled_at=?, updated_at=? WHERE id=?",
+                                (day + str(pk["scheduled_at"])[10:], at, pk["id"]))
+            ops.commit()
+            return {"ok": True, "id": cid, "date": day}
+        if action == "delete":
+            if body.get("confirm") is not True:
+                raise ApiError(400, "删除要在面板上确认一次（confirm: true）")
+            busy = [pk["id"] for pk in packs if pk["status"] in ("approved", "drafted", "published")]
+            if busy:
+                raise ApiError(409, f"这条已经在发布或已经发了（{', '.join(busy)}），不能从日历上删")
+            ops.execute("UPDATE contents SET status='deleted', removed_at=? WHERE id=?", (at, cid))
+            ops.execute("UPDATE publish_packs SET status='rejected', updated_at=? WHERE content_id=? AND status IN ('ready','carded')", (at, cid))
+            ops.commit()
+            return {"ok": True, "id": cid, "deleted": True}
+        if action == "publish":
+            if body.get("confirm") is not True:
+                raise ApiError(400, "发布要在面板上确认一次（confirm: true）")
+            live = [pk["id"] for pk in packs if pk["status"] != "rejected"]
+            if live:
+                raise ApiError(409, f"这条已经有发布包了（{', '.join(live)}），到发布中心批准")
+            imgs = image_scripts(c)
+            if c["status"] != "scripted" or not imgs:
+                raise ApiError(409, "只有写好稿的图文能从这里发：视频稿的素材生产已停用，还没写稿的先写稿")
+            t = now()
+            day = max(planned_date(c) or t.date().isoformat(), t.date().isoformat())   # 计划日已过就今天发
+            when = datetime.fromisoformat(day + "T20:00:00").replace(tzinfo=TZ)
+            if when - t < timedelta(hours=1):     # 今晚 20:00 来不及出图了：出完图再定，先按一小时后
+                when = (t + timedelta(hours=1)).replace(second=0, microsecond=0)
+            data = {"content_id": cid, "platforms": [s["platform"] for s in imgs], "publish_date": day,
+                    "scheduled_at": when.isoformat(timespec="seconds"), "script_paths": [s["path"] for s in imgs], "by": by, "via": "panel"}
+            approved = {"by": by, "at": at, "option": "publish", "label": "面板日历发布", "via": "panel"}
+            out = rt.pipeline.emit({"source": "panel", "type": "content.images.requested", "subject": f"content:{cid}",
+                                    "summary": f"面板日历发布 {cid}（{day}）", "data": data, "dedup_key": f"panel-content:{cid}:{at}"},
+                                   approved=approved)
+            ops.execute("UPDATE contents SET planned_date=? WHERE id=?", (day, cid))
+            ops.commit()
+            return {"ok": True, "id": cid, "date": day, "scheduled_at": data["scheduled_at"], "routed": out}
+        raise ApiError(400, f"不认识的动作 {action}")
+    finally:
+        ops.close()
+
 LEAD_STAGES = ("待跟进", "已联系", "已回复", "不跟进")    # 人在面板上能改到的阶段；已评论由发评论的脚本或“我已发评论”写
 
 
@@ -368,6 +437,8 @@ def handle_get(rt, path: str, q: dict) -> dict | list:
 
 def handle_post(rt, path: str, body: dict, trusted: bool = False) -> dict | list:
     """trusted = 请求带着宿主交给确定性脚本的令牌。只有这样发来的事件才能越过“需要人批准”的守门。"""
+    if path == "/api/contents":  # 内容日历：{action: move, id, date} / {action: delete|publish, id, confirm: true}
+        return contents_action(rt, body)
     if path == "/api/leads":     # 线索：{action: stage, id, stage: 待跟进|已联系|已回复|不跟进, note?} / {action: commented, id}
         return leads_action(rt, body)
     if path == "/api/demands":   # 需求池：{action: approve|watch|shelve|reopen, id, confirm?, reason?} 或 {action: add, text}

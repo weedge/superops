@@ -43,8 +43,25 @@ def _count(ops, sql: str, args: tuple = ()) -> int:
     return ops.execute(sql, args).fetchone()[0] or 0
 
 
+def _no_auto_why(c: dict) -> str:
+    from .contents import scripts
+    fmts = {(x["platform"], x["format"]) for x in scripts({"script_path": c.get("_script_path")})} if c.get("_script_path") else set()
+    if any(f == "图文" for _, f in fmts):
+        return "知乎 / 公众号的图文是文章，还没有自动出图，人工发"
+    return "视频稿：素材生产已停用，只能人工做片"
+
+
+def _status_dist(rows: list[dict]) -> list[dict]:
+    counts: dict[str, int] = {}
+    for r in rows:
+        counts[r["status"] or "未填"] = counts.get(r["status"] or "未填", 0) + 1
+    return [{"label": k, "n": n} for k, n in sorted(counts.items(), key=lambda x: -x[1])]
+
+
 def _content_view(ops, cfg: dict) -> dict:
-    contents = db.rows(ops.execute("SELECT id, parent_id, pillar, persona, topic, status, popto_features, created_at FROM contents ORDER BY id"))
+    from .contents import image_scripts, planned_date
+    contents = db.rows(ops.execute("SELECT id, parent_id, pillar, persona, topic, status, popto_features, created_at, planned_date, script_path"
+                                   " FROM contents WHERE removed_at IS NULL ORDER BY id"))
     packs = db.rows(ops.execute(
         "SELECT p.id, p.content_id, p.platform, p.account, p.title, p.scheduled_at, p.publish_mode, p.status, p.updated_at,"
         " a.status action_status FROM publish_packs p LEFT JOIN actions a ON a.action_id='publish:'||p.id"
@@ -57,9 +74,18 @@ def _content_view(ops, cfg: dict) -> dict:
     for c in contents:
         c["features"] = _load(c.pop("popto_features"), []) or []
         c["packs"] = packs_by_content.get(c["id"], [])
-        m = re.match(r"c_(\d{4})(\d{2})(\d{2})_", c["id"])  # 内容 ID 里带计划发布日
-        if m:
-            calendar.setdefault("-".join(m.groups()), []).append(c)
+        imgs = image_scripts(c)
+        c["_script_path"] = c.pop("script_path", None)
+        in_flow = any(p["status"] not in ("rejected",) for p in c["packs"])
+        # 面板上能不能直接“发布”：写好稿的图文、还没进发布流程（有发布包了就去发布中心批）
+        c["publish"] = ({"ok": True, "platforms": [s["platform"] for s in imgs]} if imgs and c["status"] == "scripted" and not in_flow
+                        else {"ok": False, "why": "已经在发布流程里，去发布中心批" if in_flow else "还没写好稿" if c["status"] != "scripted"
+                              else _no_auto_why(c)})
+        c.pop("_script_path", None)
+        d = planned_date(c)                                   # 挪过就用挪过的日期，否则按内容 ID 里带的
+        c["date"] = d
+        if d:
+            calendar.setdefault(d, []).append(c)
         else:
             undated += 1
     manual = db.rows(ops.execute(
@@ -67,7 +93,7 @@ def _content_view(ops, cfg: dict) -> dict:
         " LEFT JOIN publish_packs p ON p.id=a.ref WHERE a.kind='publish' AND a.status='awaiting_manual' ORDER BY a.approved_at"))
     return {
         "total": len(contents), "undated": undated,
-        "status": _dist(ops, "contents", "status"), "pillars": _dist(ops, "contents", "pillar"),
+        "status": _status_dist(contents),                    # 删掉的不算 "pillars": _dist(ops, "contents", "pillar"),
         "personas": _dist(ops, "contents", "persona"),
         "calendar": [{"date": d, "items": items} for d, items in sorted(calendar.items())],
         "packs": packs, "pack_status": _dist(ops, "publish_packs", "status"),
