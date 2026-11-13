@@ -1,4 +1,4 @@
-# superops · 产品运营研发多 Agent 系统
+# superops · 本地多 Agent 系统
 
 superops 是 Popto 产品运营研发多 Agent 系统（本机运行）：定时、业务事件和钉钉群里的话进来，系统判断该不该开工，开工的事在一张工单里由本机的 Claude / Codex / Antigravity（或确定性脚本）做完，只有要人拍板的事才变成一张带选项的问题卡片发给人。它是 Python 包 `superops`，一个进程独立运行，不依赖别的宿主。
 
