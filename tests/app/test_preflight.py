@@ -103,3 +103,16 @@ def test_专用浏览器命令行要装在本机_靠npx现拉会提醒(rt, monke
     assert item["ok"] is False and "superops browse install" in item["fix"] and "沙箱" in item["detail"]
     monkeypatch.setattr(agent_browser, "settings", lambda cfg: {"enabled": True, "profile": Path("/x"), "cli": ["/data/tools/node_modules/.bin/playwright-cli"]})
     assert {i["id"]: i for i in rt.preflight(refresh=True, check=logins({}))["items"]}["tool:playwright-cli"]["ok"] is True
+
+
+def test_只接了GitHub仓库_不要GitLab令牌_查gh登录(rt, monkeypatch):
+    from superops.biz.ci import checks as ci_checks
+    rt.cfg["ci"] = {"projects": ["github:o/r"]}
+    monkeypatch.setattr(preflight.shutil, "which", lambda cmd: f"/bin/{cmd}")
+    monkeypatch.setattr(ci_checks, "gh_auth", lambda host: {"ok": False, "detail": "没登录"})
+    by_id = {i["id"]: i for i in rt.preflight(refresh=True, check=logins({}))["items"]}
+    assert "key:gitlab" not in by_id
+    gh = by_id["tool:gh"]
+    assert gh["ok"] is False and gh["rules"] == ["发现 Agent MR"] and gh["fix"] == "gh auth login --hostname github.com --git-protocol https --web"
+    monkeypatch.setattr(ci_checks, "gh_auth", lambda host: {"ok": True, "detail": "已登录", "account": "weedge"})
+    assert {i["id"]: i for i in rt.preflight(refresh=True, check=logins({}))["items"]}["tool:gh"]["ok"] is True

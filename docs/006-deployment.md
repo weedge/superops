@@ -6,7 +6,7 @@
 
 - **一个进程** `superops run`：来源（定时、流水线、终端、钉钉）、评估、执行器、发件箱、管理 API 和面板都在里面。它按需拉起子进程：Agent 的命令行、确定性脚本、`dws`、专用浏览器。
 - **一个数据目录** `~/popto-superops-data/`（`SUPEROPS_DATA` 可改），700 权限，不进 git。
-- **本机的凭据**：Agent 命令行各自的登录、`dws` 的钉钉登录、钥匙串里的 TikHub / RedFox / GitLab 密钥、Chrome 里各平台的登录态。superops 自己不保存任何密钥。
+- **本机的凭据**：Agent 命令行各自的登录、`dws` / `lark-cli` 的登录、`gh` 的 GitHub 登录、钥匙串里的 TikHub / RedFox / GitLab 密钥、Chrome 里各平台的登录态。superops 自己不保存任何密钥。
 
 执行器以操作者的系统用户运行。工具档位、禁用清单、“Agent 的环境里没有管理 API 的地址和令牌”、“不带宿主令牌发不出需要批准的事件”都是默认的防线，不是安全边界：`workspace` 以上档位的 Agent 可以运行 python，也就可以读操作者能读的文件。要隔离，用一个只放了 Agent 凭据的专用系统账号。
 
@@ -17,7 +17,7 @@
 - 聊天软件的命令行，用哪个装哪个：`lark-cli`（飞书，`npm install -g @larksuite/cli`，再 `lark-cli config init --new`、`lark-cli auth login --domain im`）或 `dws`（钉钉，`dws auth login --recommend`）。
 - 按用到的功能：`ffmpeg` 和 `whisper-cli`（视频质检降级时抽帧转写）、本机 Chrome（自动发布、读创作者后台、专用浏览器）、Node.js（专用浏览器的 playwright-cli）。
 
-`superops doctor` 逐项检查这些，并报告策略校验结果、宿主是否在跑、各来源的状态。聊天软件单独列几行（读的是宿主实际用的设置，含面板在库里改过的）：用的是钉钉还是飞书；`dws`、`lark-cli` 装没装（没开的那个只说一声，不算问题）；开着的那个本人身份登录没有、群配了没有（飞书写的群名能不能换成群 ID）、home 是否指向它、审批人名单是否为空或写了不是 open_id 的值，没通过的每行后面写着怎么补。
+`superops doctor` 逐项检查这些，并报告策略校验结果、宿主是否在跑、各来源的状态。聊天软件单独列几行（读的是宿主实际用的设置，含面板在库里改过的）：用的是钉钉还是飞书；`dws`、`lark-cli` 装没装（没开的那个只说一声，不算问题）；开着的那个本人身份登录没有、群配了没有（飞书写的群名能不能换成群 ID）、home 是否指向它、审批人名单是否为空或写了不是 open_id 的值、飞书本人身份有没有发消息的权限（`im:message.send_as_user`），没通过的每行后面写着怎么补。需求开发也单独列几行（“开发与合并”）：接了哪些仓库、GitLab 地址和令牌、GitHub 的 gh 安装 / 登录 / `repo` 权限范围 / 推送凭据、每个仓库能不能写、本机路径和 origin 对不对、往哪个分支合，见“开发与合并”一节。
 
 ## 要提前登录的和要提前放好的密钥
 
@@ -29,7 +29,8 @@
 | Agent 专用浏览器登录 | 社媒监听的浏览器补位（知乎、B站、搜狗微信）、GEO 检查 | `superops browse install`，再 `superops browse login`（建议用专门的小号） | `~/popto-superops-data/browser-profiles/agent-browse/` |
 | TikHub 密钥 | 社媒监听（接口：搜作品、按人群词找人、补粉丝数）；评论采集；抖音指标读不到后台时的兜底 | `security add-generic-password -s popto-ops/tikhub -a popto-ops -w <key>` | 钥匙串 |
 | 飞书本人登录（要用飞书才配） | 飞书来源：轮询运营群、发卡片和结果、单聊 / @我 的自动回复 | `lark-cli auth login`（7 天续一次） | lark-cli 自己保存 |
-| GitLab 令牌（机器人账号，api 权限） | 接入了仓库（`ci.projects` 非空）时的 CI 轮询、MR 审查与写回、合并闸门、合并、开发工单的推送和开 MR | `security add-generic-password -s popto-ops/gitlab -a popto-ops -w <token>` | 钥匙串 |
+| GitLab 令牌（机器人账号，api 权限） | 接了 GitLab 仓库时的 CI 轮询、MR 审查与写回、合并闸门、合并、开发工单的推送和开 MR | `security add-generic-password -s popto-ops/gitlab -a popto-ops -w <token>` | 钥匙串 |
+| GitHub 登录（gh） | 接了 GitHub 仓库时的同一批事：轮询 PR、审查写回、合并闸门、合并、推送和开 PR | `gh auth login --hostname github.com --git-protocol https --web`，再 `gh auth setup-git` | gh 自己（钥匙串） |
 | Agent 命令行已登录（Claude / Codex / Antigravity） | 所有 Agent 执行的规则 | 各自的命令行登录一次；`superops doctor` 看找到的命令在哪、经不经包装脚本 | 各 CLI 自己的目录 |
 | `dws` 已登录 | 钉钉来源（收群消息、发卡片） | `dws auth login` | dws 自己的配置 |
 
@@ -63,7 +64,7 @@ uv run pytest -q
 | `policy.yaml` | 策略：接单模式的初始值、研判时限、执行位和闲置期限、明确请求的默认执行方式、home 渠道、各来源的开关和收听范围、各来源的名单 / 可回答人 / 准入表、规则 | 走 MR；`superops check` 校验，`superops reload` 生效 |
 | `agents.yaml` | 这套部署叫什么（`instance`，见下）；机器层面：管理 API 的地址和令牌、代理、Agent 的启动方式 / 并发 / 续接、降级链、熔断、忙时顺延的等待（`overflow_after`）、用量策略、预算、数据保留期、静默时段、每日卡片上限、问题默认到期、钉钉发消息的身份、专用浏览器、自动发布模式、需求打分 | 重启宿主 |
 | `schedules.yaml` | 定时表：每项的类型、`name`（面板上的中文名）、`at` 或 `every`、`max_late`、`requires` | `superops reload` |
-| `~/popto-superops-data/local.yaml` | 本机的值：代理、钉钉群 ID、审批人 ID、GitLab 项目和本机仓库路径。同名键深度覆盖上面两个文件：全部键覆盖 `agents.yaml`；`eval`、`executor`、`sources`、`policy`、`home` 五个键覆盖 `policy.yaml` | 覆盖 `policy.yaml` 的部分随 `superops reload` 生效；其余重启。钉钉来源的开关和群列表要重启 |
+| `~/popto-superops-data/local.yaml` | 本机的值：代理、钉钉 / 飞书群 ID、审批人 ID、GitLab / GitHub 项目和本机仓库路径。同名键深度覆盖上面两个文件：全部键覆盖 `agents.yaml`；`eval`、`executor`、`sources`、`policy`、`home` 五个键覆盖 `policy.yaml` | 覆盖 `policy.yaml` 的部分随 `superops reload` 生效；其余重启。钉钉来源的开关和群列表要重启 |
 | `skills/<名字>/SKILL.md` | 各条规则交给 Agent 的工作说明。面板 → Skill 页能看全部 Skill（被哪些规则用、近 30 天工单数和失败数），仓库里的能直接在面板上改，保存前自动存一份旧版本到 `~/popto-superops-data/skill-history/<名字>/`，能在“历史版本”里对比、恢复；`external_skill_dirs` 里的（Popto 产品仓库的）只读。`schema.json` 连着入库代码，不在面板上改 | 下一轮工单生效，不用重启 |
 | 库里的运行时开关 | 接单模式、暂停处理、单独暂停的规则 / Agent / 事件来源 | `superops mode`、`superops pause`、`superops resume`，立即生效，重启后保留 |
 
@@ -115,11 +116,11 @@ policy:
 
 `chats`、`rule_chats` 和 `home.address.chat` 都可以写群名：飞书来源第一次用到时用 `im +chat-search` 换成群 ID（只认完全一样且唯一的群名），记下来，面板上按群名显示；换不出来的（没登录、重名、改了名）先跳过，在来源状态里报出原因，每分钟重试一次。写群 ID 不依赖群名，群改名也不受影响。
 
-**生成配置**：`superops init` 生成的 `local.yaml` 默认就是飞书：`home` 和 `chats` 指向群「测试superops」，钉钉的写法留在注释里。lark-cli 登录着时，群名直接换成群 ID，你的 open_id 也填进 `allowed`；没登录就先写群名、`allowed` 留空（`superops check` 会提醒没人能在群里提请求），登录后用 `lark-cli auth status` 的 `userOpenId` 补上。其他写法：`superops init --group <群名或群 ID>` 换群，`--chat dingtalk --group <openConversationId>` 用钉钉，`--chat none` 不配聊天软件（落本机收件箱）。已有 `local.yaml` 时不覆盖；`--reset-local` 先备份成 `local.yaml.bak-<时间>` 再重新生成。
+**生成配置**：`superops init` 生成的 `local.yaml` 默认就是飞书：`home` 和 `chats` 指向群「测试superops」，钉钉的写法留在注释里。lark-cli 登录着时，群名直接换成群 ID，你的 open_id 也填进 `allowed`；没登录就先写群名、`allowed` 留空（`superops check` 会提醒没人能在群里提请求），登录后用 `lark-cli auth status` 的 `userOpenId` 补上。其他写法：`superops init --group <群名或群 ID>` 换群，`--chat dingtalk --group <openConversationId>` 用钉钉，`--chat none` 不配聊天软件（落本机收件箱）。已有 `local.yaml` 时不覆盖；`--reset-local` 先备份成 `local.yaml.bak-<时间>` 再重新生成。生成的文件末尾还附一段注释掉的接 GitHub 仓库的例子（`projects`、`repos`、`base_branch` 的写法和要准备的命令），gh 登录着时例子里的 owner 就是登录的账号，见“开发与合并”。
 
 **2026-11-12 切换记录**：钉钉关掉，飞书打开，群是「测试superops」（`oc_xxx`），`home` 也指向它；切换前的配置备份在 `local.yaml.bak-before-lark-20261112`。实测：`lark-cli im +chat-messages-list` 的时间只到分钟、是本地时间，系统消息（建群提示等）跳过；群里 `@兔管家` 的请求半分钟内开出工单并把确认和结果发回群里。
 
-**登录**：`lark-cli auth login`（本人身份）；用户登录 7 天要续一次，过期后启动检查和来源页会报“飞书本人身份没登录”。测试里绝不调真的 lark-cli。
+**登录**：`lark-cli auth login --domain im`（本人身份）；用户登录 7 天要续一次，过期后启动检查和来源页会报“飞书本人身份没登录”。以你的身份发消息还要单独授权 `im:message.send_as_user`：`lark-cli auth login --scope "im:message.send_as_user"`。少了它，确认、问题卡片和结果都发不出去，发件箱一直重试（2026-11-15 踩过）；`superops doctor` 的“飞书权限”一行和启动检查都会报出来。测试里绝不调真的 lark-cli。
 
 ## 钉钉自动回复
 
@@ -301,9 +302,43 @@ listening:
 
 需求被批准后，开发工单写 PRD → 人批 → 在独立 worktree 里开发、commit → 宿主推 `agent/*` 分支、开 MR → Codex 审查 → 合并闸门发合并卡片 → 人批后合并。`ci.auto_merge: false` 时合并都要人批。
 
+**GitLab 和 GitHub 都能接，也可以同时接。** 仓库在 `local.yaml` 的 `ci.projects` 里，写法决定它在哪：
+
+```yaml
+ci:
+  projects:
+    - popto/frontend_popto          # GitLab（ci.gitlab_url）
+    - github:weedge/superops        # GitHub；也可以写 https://github.com/weedge/superops
+  repos:                            # 每个项目在本机的路径（origin 要指向这个项目）
+    popto/frontend_popto: ~/code/frontend_popto
+    weedge/superops: ~/project/palfish/popto/dsh-superagent-ops
+  github_host: github.com           # GitHub Enterprise 改成自己的域名
+  github_merge_method: merge        # merge | squash | rebase
+  base_branch: master               # GitLab 用；GitHub 仓库默认往仓库的默认分支（如 main）合；也可按项目写 {weedge/superops: main}
+```
+
+GitHub 上整条链路和 GitLab 一样，只是 MR 叫 PR：宿主推 `agent/*` 分支后开 PR（描述里带 `producer: <Agent>`）；`ci-poll` 每 30 分钟发现 Agent 的 PR；Codex 审查的意见写成 PR 评论，再打 `review:round-N` / `review:passed` 标签（没有的标签 GitHub 自动建）；合并闸门看 PR 的改动，“流水线通过”看的是这个提交的 checks 和 status（一个检查都没有就当没有流水线，不会自动合并）；人批后按 `github_merge_method` 合并并删掉源分支；在 GitHub 上直接合并的 Agent PR 照样补记、关联的需求标为完成、登记线上核实。事件类型沿用 `gitlab.*`（历史命名，规则和 Skill 都按它认），事件数据里的 `forge` 写明是 `gitlab` 还是 `github`。
+
+`superops init` 生成的 `local.yaml` 末尾有这段的注释版（gh 登录着时 owner 已填成登录的账号），去掉 `#`、把 `<仓库>` 换成真实的仓库名就能用。
+
+**GitHub 要准备的**（`superops doctor` 的“开发与合并”几行逐项查，没通过的后面写着命令）：
+
+| 要准备的 | 怎么做 | doctor 里哪一行 |
+| --- | --- | --- |
+| 装 gh | `brew install gh` | GitHub 命令行 gh |
+| 用有写权限的账号登录 gh | `gh auth login --hostname github.com --git-protocol https --web`（令牌由 gh 存在钥匙串，宿主和 Agent 都不碰） | GitHub 登录 |
+| 令牌带 `repo` 权限 | 缺的话 `gh auth refresh --hostname github.com --scopes repo` | GitHub 权限范围 |
+| `git push` 有凭据 | `gh auth setup-git`（让 git 用 gh 的凭据）；已经能用钥匙串里的凭据推送的也算通过；origin 走 SSH 的用本机 SSH 密钥 | git 推送凭据（https） |
+| 账号对仓库有写权限 | 请仓库管理员给这个账号 Write | 仓库 owner/repo |
+| 本机有这个仓库、origin 指向它 | `git clone https://github.com/<owner>/<repo>.git <路径>`，再在 `ci.repos` 写路径 | 本机仓库 owner/repo |
+
+接了 GitLab 的照旧要 `ci.gitlab_url` 和钥匙串里的 GitLab 令牌（doctor 的“GitLab 地址”“GitLab 令牌”两行）；只接 GitHub 时不查也不要 GitLab 令牌。启动检查同样：接了 GitHub 仓库、开发与合并的规则开着时，gh 没登录会提前告诉你。
+
+开发档的 Agent 不给 `gh`、`glab` 和 `git push`：推送和开 MR / PR 只由宿主做（`gh auth token` 能直接读出令牌，所以整个 gh 都不给）。
+
 **测试需求。** 需求原话里写了【测试】（或 `[测试]`、“这是测试…”）的，入池时打上测试标记，需求标题前补上【测试】。需求 Top 10 卡片、PRD 卡片和 MR 标题都会带【测试】；合并卡片按需求池里关联的需求生成，测试需求的标题是“【测试】合并 …？”，建议改成“先不合（这是测试需求）”，风险第一条写明（原话里有“不合并”时直接说出来），理由里附需求原话。测试需求即使打开了 `ci.auto_merge` 也不会自动合并。只是普通地提到“测试”（比如“A/B 测试需求”）不算。
 
-**合并后核实线上版本。** 每次合并（卡片合并、自动合并、别人在 GitLab 上直接合并 Agent 的 MR）都会登记一条待核实：
+**合并后核实线上版本。** 每次合并（卡片合并、自动合并、别人在 GitLab / GitHub 上直接合并 Agent 的 MR / PR）都会登记一条待核实：
 
 | 情况 | 怎么处理 |
 | --- | --- |

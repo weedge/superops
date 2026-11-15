@@ -1,4 +1,5 @@
-"""CI 中台脚本（04）：审查结论写回 MR、合并闸门、线上核实。
+"""CI 中台脚本（04）：审查结论写回 MR、合并闸门、线上核实。GitLab 的 MR 和 GitHub 的 PR 都走这里（见 forge.py），
+事件类型沿用 gitlab.*，data 里带 forge。
 
 python -m superops.biz.ci poll           # cron.ci_poll：发现 agent/* 分支的 MR，发 gitlab.mr.opened / updated
 python -m superops.biz.ci review-post    # gitlab.review.done：把审查意见写成 MR 评论 + 标签，决定打回还是通过
@@ -6,7 +7,7 @@ python -m superops.biz.ci merge-gate     # gitlab.review.passed：跑合并闸�
 python -m superops.biz.ci merge          # gitlab.mr.merge_approved：人批后合并
 python -m superops.biz.ci verify <url> <sha> [--subject mr:repo!iid]   # 线上核实：version.json 是否包含该提交
 
-合并后的线上核实：合并（卡片合并、自动合并、在 GitLab 上直接合并）时登记一条 deploy_checks；
+合并后的线上核实：合并（卡片合并、自动合并、在 GitLab / GitHub 上直接合并）时登记一条 deploy_checks；
 ci.verify 里配了这个项目的线上版本地址，每次 poll 顺带去查，线上是这个提交或包含它就发 deploy.verified，
 过了期限（默认 24 小时）还不是就发 deploy.mismatch（P0 告警）；没配地址的，合并时发 deploy.unverifiable 请人确认上线。
 """
@@ -21,9 +22,8 @@ from ...infra.config import load_agents_config
 from ...infra.secrets import service_for
 from ..scriptkit import emit_result, hub_client, load_task
 from ...infra.timeutil import iso, now, parse_iso
-from . import gate
+from . import forge, gate
 from .. import db, ingest
-from .gitlab import GitLab
 
 MAX_ROUNDS = 3
 
@@ -35,7 +35,19 @@ def _ci_cfg() -> dict:
     c.setdefault("auto_merge", False)
     c.setdefault("branch_prefix", "agent/")
     c.setdefault("verify", {})   # {项目: {url: 线上版本地址（version.json 等，内容里有提交号）, within: 24h}}
+    c.setdefault("github_host", "github.com")
+    c.setdefault("github_merge_method", "merge")
     return c
+
+
+def _client(c: dict, project: str, data: dict | None = None, cache: dict | None = None):
+    """项目对应的客户端（同一个脚本里同一种只建一个）。"""
+    kind = forge.kind_of(c, project, data)
+    if cache is None:
+        return forge.client(c, kind)
+    if kind not in cache:
+        cache[kind] = forge.client(c, kind)
+    return cache[kind]
 
 
 # ---------------------------------------------------------------------- 合并后的线上核实
@@ -55,7 +67,7 @@ def verify_spec(c: dict, project: str) -> dict:
 
 def register_deploy_check(c: dict, project: str, iid: int, sha: str | None, web_url: str | None, title: str | None = None) -> list[dict]:
     """合并了：登记一条待核实。没配线上版本地址的，返回一条 deploy.unverifiable 请人确认上线。只登记一次。"""
-    project = GitLab.normalize(project)
+    project = forge.normalize(c, project)
     spec = verify_spec(c, project)
     ops = db.open_ops()
     try:
@@ -88,7 +100,7 @@ def online_version(url: str) -> str:
         return body.strip()[:80]
 
 
-def deploy_contains(gl: GitLab, project: str, sha: str, online: str) -> bool:
+def deploy_contains(gl, project: str, sha: str, online: str) -> bool:
     """线上就是这个提交，或者线上的提交包含它（之后又有别的合并一起上了线）。"""
     if not online or not sha:
         return False
@@ -103,8 +115,10 @@ def deploy_contains(gl: GitLab, project: str, sha: str, online: str) -> bool:
     return bool(base) and str(base).startswith(sha[:8])
 
 
-def check_deploys(gl: GitLab) -> tuple[list[dict], list[str]]:
-    """查一遍待核实的合并。返回 (事件, 说明)。"""
+def check_deploys(gl=None, c: dict | None = None) -> tuple[list[dict], list[str]]:
+    """查一遍待核实的合并。返回 (事件, 说明)。gl 不传就按每条记录的项目选 GitLab / GitHub。"""
+    c = c if c is not None else _ci_cfg()
+    cache: dict = {}
     ops = db.open_ops()
     events, notes = [], []
     try:
@@ -112,7 +126,7 @@ def check_deploys(gl: GitLab) -> tuple[list[dict], list[str]]:
             name, subject = f"{r['project']}!{r['iid']}", f"mr:{r['project']}!{r['iid']}"
             try:
                 online = online_version(r["url"])
-                ok = deploy_contains(gl, r["project"], r["sha"], online)
+                ok = deploy_contains(gl or _client(c, r["project"], cache=cache), r["project"], r["sha"], online)
                 seen = f"线上 {online[:12] or '未知'}，期望包含 {r['sha'][:12]}"
             except Exception as e:  # noqa: BLE001
                 ok, seen = False, f"线上版本地址请求失败：{str(e)[:120]}"
@@ -135,10 +149,10 @@ def check_deploys(gl: GitLab) -> tuple[list[dict], list[str]]:
 
 
 # ---------------------------------------------------------------------- 测试需求
-def _demand(proj: str, iid: int) -> dict | None:
+def _demand(c: dict, proj: str, iid: int) -> dict | None:
     ops = db.open_ops()
     try:
-        return ingest.demand_for_mr(ops, GitLab.normalize(proj), iid)
+        return ingest.demand_for_mr(ops, forge.normalize(c, proj), iid)
     finally:
         ops.close()
 
@@ -153,17 +167,26 @@ def _producer(mr: dict) -> str:
 
 def cmd_poll() -> None:
     c = _ci_cfg()
-    gl = GitLab(c["gitlab_url"])
-    missing = []
-    if not c["projects"]:
-        missing.append("local.yaml 的 ci.projects 为空")
-    if not gl.configured:
-        missing.append(f"钥匙串没有 {service_for('gitlab')}（GitLab Token）")
-    if missing:
-        emit_result("CI 中台未接入：" + "；".join(missing) + "，跳过")
+    projects = forge.projects(c)
+    if not projects:
+        emit_result("CI 中台未接入：local.yaml 的 ci.projects 为空，跳过")
+        return
+    clients, skipped = {}, []
+    for kind in dict.fromkeys(k for k, _ in projects):
+        cl = forge.client(c, kind)
+        if cl.configured:
+            clients[kind] = cl
+        else:
+            skipped.append(f"钥匙串没有 {service_for('gitlab')}（GitLab Token）" if kind == "gitlab"
+                           else f"gh 没登录 {forge.github_host(c)}（gh auth login）")
+    if not clients:
+        emit_result("CI 中台未接入：" + "；".join(skipped) + "，跳过")
         return
     events = []
-    for proj in [GitLab.normalize(p) for p in c["projects"]]:
+    for kind, proj in projects:
+        if kind not in clients:
+            continue
+        gl, word, where = clients[kind], forge.WORDS[kind], forge.TITLES[kind]
         for mr in gl.open_mrs(proj):
             if not str(mr.get("source_branch", "")).startswith(c["branch_prefix"]):
                 continue
@@ -172,17 +195,17 @@ def cmd_poll() -> None:
             subject = f"mr:{proj}!{mr['iid']}"
             if "review:passed" in labels:
                 events.append({"source": "ci", "type": "gitlab.review.passed", "subject": subject,
-                               "summary": f"MR {proj}!{mr['iid']} 审查通过，待合并闸门",
+                               "summary": f"{word} {proj}!{mr['iid']} 审查通过，待合并闸门",
                                "dedup_key": f"passed:{proj}:{mr['iid']}:{sha}",
-                               "data": {"project": proj, "iid": mr["iid"], "sha": sha, "web_url": mr.get("web_url")}})
+                               "data": {"project": proj, "iid": mr["iid"], "sha": sha, "web_url": mr.get("web_url"), "forge": kind}})
                 continue
             typ = "gitlab.mr.updated" if any(l.startswith("review:round-") for l in labels) else "gitlab.mr.opened"
             events.append({"source": "ci", "type": typ, "subject": subject, "link": mr.get("web_url"),
-                           "summary": f"MR {proj}!{mr['iid']}「{mr.get('title', '')[:40]}」有新提交",
+                           "summary": f"{word} {proj}!{mr['iid']}「{mr.get('title', '')[:40]}」有新提交",
                            "dedup_key": f"mr:{proj}:{mr['iid']}:{sha}",
                            "data": {"project": proj, "iid": mr["iid"], "sha": sha, "producer": _producer(mr),
-                                    "web_url": mr.get("web_url"), "title": mr.get("title")}})
-        # 在 GitLab 上直接合并（没走合并卡片）的 Agent MR：补一条留底，dedup 保证只记一次
+                                    "web_url": mr.get("web_url"), "title": mr.get("title"), "forge": kind}})
+        # 在 GitLab / GitHub 上直接合并（没走合并卡片）的 Agent MR：补一条留底，dedup 保证只记一次
         for mr in gl.merged_mrs(proj):
             if not str(mr.get("source_branch", "")).startswith(c["branch_prefix"]):
                 continue
@@ -190,13 +213,15 @@ def cmd_poll() -> None:
             events += register_deploy_check(c, proj, mr["iid"], mr.get("merge_commit_sha"), mr.get("web_url"), mr.get("title"))
             events.append({"source": "ci", "type": "gitlab.mr.merged", "subject": f"mr:{proj}!{mr['iid']}",
                            "link": mr.get("web_url"),
-                           "summary": f"MR {proj}!{mr['iid']}「{mr.get('title', '')[:40]}」已合并"
-                                      f"（{(mr.get('merged_by') or {}).get('username') or '?'} 在 GitLab 上合并）",
+                           "summary": f"{word} {proj}!{mr['iid']}「{mr.get('title', '')[:40]}」已合并"
+                                      f"（{(mr.get('merged_by') or {}).get('username') or '有人'}在 {where} 上合并）",
                            "dedup_key": f"merged:{proj}:{mr['iid']}",
                            "data": {"project": proj, "iid": mr["iid"], "merged_at": mr.get("merged_at"),
-                                    "merged_by": (mr.get("merged_by") or {}).get("username"), "via": "gitlab"}})
-    deploy_events, deploy_notes = check_deploys(gl)
+                                    "merged_by": (mr.get("merged_by") or {}).get("username"), "via": kind, "forge": kind}})
+    deploy_events, deploy_notes = check_deploys(c=c)
     events += deploy_events
+    if skipped:
+        deploy_notes.append("跳过：" + "；".join(skipped))
     n_open = sum(1 for e in events if e["type"].startswith(("gitlab.mr.opened", "gitlab.mr.updated", "gitlab.review")))
     emit_result(f"发现 {n_open} 个需要处理的 Agent MR" + (f"；线上核实：{'，'.join(deploy_notes)}" if deploy_notes else ""),
                 follow_up_events=events)
@@ -216,11 +241,12 @@ def _fmt_findings(findings: list[dict], rnd: int) -> str:
 def cmd_review_post() -> None:
     lease = load_task()
     c = _ci_cfg()
-    gl = GitLab(c["gitlab_url"])
+    cache: dict = {}
     follow, posted = [], 0
     for e in lease.get("events") or []:
         d = e.get("data") or {}
         proj, iid, rnd = d.get("project"), d.get("iid"), int(d.get("round") or 1)
+        gl = _client(c, proj or "", d, cache)
         findings = d.get("findings") or []
         blocking = [f for f in findings if f.get("severity") in ("blocker", "major")]
         labels = [f"review:round-{rnd}"]
@@ -238,21 +264,23 @@ def cmd_review_post() -> None:
         else:
             follow.append({"source": "ci", "type": "gitlab.review.passed", "subject": subject,
                            "summary": f"{subject} 审查通过" + ("（已满 3 轮，剩余意见留档）" if blocking else ""),
-                           "data": {"project": proj, "iid": iid, "sha": d.get("sha")}})
-    emit_result(f"写回 {posted} 个 MR 的审查结论" if posted else "审查结论未写回 GitLab（未配置 Token），已转后续事件",
+                           "data": {"project": proj, "iid": iid, "sha": d.get("sha"), **({"forge": d["forge"]} if d.get("forge") else {})}})
+    emit_result(f"写回 {posted} 个 MR / PR 的审查结论" if posted else "审查结论没写回（GitLab 没配 Token 或 gh 没登录），已转后续事件",
                 follow_up_events=follow)
 
 
 def cmd_merge_gate() -> None:
     lease = load_task()
     c = _ci_cfg()
-    gl = GitLab(c["gitlab_url"])
-    if not gl.configured:
-        emit_result("未配置 GitLab Token，无法跑合并闸门")
-        return
+    cache: dict = {}
     for e in lease.get("events") or []:
         d = e.get("data") or {}
         proj, iid = d["project"], d["iid"]
+        gl = _client(c, proj, d, cache)
+        if not gl.configured:
+            emit_result("GitLab 没配 Token，跑不了合并闸门" if forge.kind_of(c, proj, d) == "gitlab"
+                        else f"gh 没登录 {forge.github_host(c)}，跑不了合并闸门（gh auth login）")
+            return
         mr = gl.mr(proj, iid)
         g = gate.check(gl.changes(proj, iid), mr.get("labels"), prd_direction="产品方向" in (mr.get("description") or ""))
         subject = f"mr:{proj}!{iid}"
@@ -262,11 +290,11 @@ def cmd_merge_gate() -> None:
                 {"source": "ci", "type": "gitlab.review.changes_requested", "subject": subject,
                  "summary": f"{subject} 合并闸门发现阻断问题", "data": {**d, "findings": [{"severity": "blocker", "problem": b} for b in g.blockers]}}])
             return
-        demand = _demand(proj, iid)
+        demand = _demand(c, proj, iid)
         is_test = bool(demand and demand["is_test"]) or ingest.looks_like_test(mr.get("title"))
         if g.auto_merge_ok and c["auto_merge"] and not is_test and (mr.get("head_pipeline") or mr.get("pipeline") or {}).get("status") == "success":
             res = gl.merge(proj, iid, mr.get("sha")) or {}
-            ingest.demand_merged(GitLab.normalize(proj), iid)
+            ingest.demand_merged(forge.normalize(c, proj), iid)
             emit_result(f"{subject} 已自动合并", follow_up_events=[
                 {"source": "ci", "type": "gitlab.mr.merged", "subject": subject, "summary": f"{subject} 已合并", "data": d},
                 *register_deploy_check(c, proj, iid, res.get("merge_commit_sha"), mr.get("web_url"), mr.get("title"))])
@@ -280,7 +308,7 @@ def cmd_merge_gate() -> None:
         if is_test:   # 测试需求：标题、建议、风险第一条都写明，免得当成正常需求顺手合了
             hold = "原话里写了不合并" if "不合并" in ((demand or {}).get("quote") or "") else "确认确实要合进主干再选合并"
             why = [f"这是测试需求（{hold}）", *why]
-        verify = verify_spec(c, GitLab.normalize(proj)).get("url")
+        verify = verify_spec(c, forge.normalize(c, proj)).get("url")
         why.append("合并后会自动核实线上版本" if verify else "这个仓库没配线上版本地址（ci.verify），合并后没法自动核实是否上线")
         card = {"kind": "release", "title": f"{'【测试】' if is_test else ''}合并 {proj}!{iid}？",
                 "proposal": "先不合（这是测试需求）" if is_test else "合并（审查已通过）",
@@ -297,21 +325,22 @@ def cmd_merge_gate() -> None:
 def cmd_merge() -> None:
     lease = load_task()
     c = _ci_cfg()
-    gl = GitLab(c["gitlab_url"])
+    cache: dict = {}
     merged = []
     extra: list[dict] = []
     for e in lease.get("events") or []:
         d = e.get("data") or {}
+        gl = _client(c, d["project"], d, cache)
         if gl.configured:
             res = gl.merge(d["project"], d["iid"], d.get("sha")) or {}
-            p = GitLab.normalize(d["project"])
+            p = forge.normalize(c, d["project"])
             merged.append((p, d["iid"]))
             ingest.demand_merged(p, d["iid"])
             extra += register_deploy_check(c, p, d["iid"], res.get("merge_commit_sha"), res.get("web_url") or d.get("web_url"), res.get("title"))
     pending = [f"{p}!{i}" for p, i in merged if verify_spec(c, p).get("url")]
     emit_result((f"已合并 {', '.join(f'{p}!{i}' for p, i in merged)}"
                  + ("；上线后每 30 分钟核实一次线上版本" if pending else "；这个仓库没配线上版本地址，没法自动核实上线，已请人确认" if merged else ""))
-                if merged else "未合并（未配置 Token）",
+                if merged else "未合并（GitLab 没配 Token 或 gh 没登录）",
                 follow_up_events=[{"source": "ci", "type": "gitlab.mr.merged", "subject": f"mr:{p}!{i}",
                                    "summary": f"{p}!{i} 已合并（人批红后由 CI 中台合并）",
                                    "dedup_key": f"merged:{p}:{i}",  # 与 poll 补记的同一把键，避免重复留底

@@ -243,7 +243,7 @@ flowchart TB
 | `superops/app/chat.py` | 面板“设置 → 聊天渠道”：钉钉 / 飞书二选一的切换（切完宿主自己重启）、改群（群 ID 或群名）、增删审批人；存成运行时覆盖 |
 | `superops/app/skills.py` | 面板“Skill”页：列出仓库和外部目录的 Skill（被哪些规则用、近 30 天工单数和失败数）；看 SKILL.md / schema.json / 文件；在面板上改仓库 Skill 的 SKILL.md（校验 name / description、防覆盖、保存前存一份进数据目录 `skill-history/`），能恢复历史版本；外部目录只读 |
 | `superops/app/autoreply.py` | 钉钉自动回复：别人单聊我、或在运营群以外的群里 @我 时，Agent（只读）起草一段回复以我的身份发出；面板开关 auto / off、过滤群（群 ID 优先、群名兜底）、同一条只回一次、每会话每小时 / 每天限量、要本人拿主意的转告 home 渠道；不进工单 |
-| `superops/app/chatcheck.py` | 聊天软件准备好了没有：`dws` / `lark-cli` 装没装、本人身份登录状态（doctor、启动检查、面板共用）、群（飞书群名能不能换成群 ID）、home、审批人；`superops doctor` 的聊天几行 |
+| `superops/app/chatcheck.py` | 聊天软件准备好了没有：`dws` / `lark-cli` 装没装、本人身份登录状态（doctor、启动检查、面板共用）、群（飞书群名能不能换成群 ID）、home、审批人；`superops doctor` 的聊天几行；飞书本人身份要有的权限（`LARK_SCOPES`） |
 | `superops/sources/kind.py` | `SourceKind` 协议和 `SourceRegistry` |
 | `superops/sources/schedule.py` | `ScheduleSource` |
 | `superops/sources/pipeline.py` | `PipelineSource`：业务事件、批准守门、防抖、线程关闭 |
@@ -303,8 +303,11 @@ flowchart TB
 | `superops/biz/executors/cleanup.py` | 人批准后的运营清理 |
 | `superops/biz/ci/__main__.py` | CI 脚本：发现 Agent 的 MR、审查结论写回、合并闸门（测试需求标出来、附需求原话）、合并、合并后登记并定时核实线上版本（`deploy_checks`） |
 | `superops/biz/ci/gate.py` | 合并闸门的确定性检查 |
+| `superops/biz/ci/checks.py` | `superops doctor` 的“开发与合并”：git、GitLab 地址和令牌 / gh 安装登录权限范围和推送凭据、每个仓库的写权限、本机路径和 origin、往哪个分支合 |
+| `superops/biz/ci/forge.py` | 每个项目在 GitLab 还是 GitHub（`ci.projects` 的写法）、规范名、选客户端、基线分支 |
+| `superops/biz/ci/github.py` | GitHub 客户端（`gh api`）：方法和返回形状同 GitLab（PR 号当 iid，checks 合成流水线状态） |
 | `superops/biz/ci/gitlab.py` | GitLab API 客户端 |
-| `superops/biz/ci/worktree.py` | 开发工单的 worktree：准备、推送、开 MR |
+| `superops/biz/ci/worktree.py` | 开发工单的 worktree：准备、推送、开 MR / PR（按项目选 GitLab / GitHub） |
 
 面板是一个文件：`superops/panel/index.html`。
 
@@ -320,10 +323,10 @@ flowchart TB
 | `tests/test_check_models.py` | `superops check` 对 agents.yaml 模型和思考强度的校验：仓库里的配置本身没问题；角色、强度写错、主 Session 的角色没有降级链会报错，脚本类 Agent 配了模型会提醒；`instance` 写错先报、没写 name 提醒用的是默认名 |
 | `tests/app/test_runtime.py` | 整个应用，用假 Agent 和真实的脚本子进程：明确请求、`observe`、人批准的动作在 `observe` 下照常执行、规则直配、脚本工单及其事件、卡片与只批明细、需要批准的事件、订阅把复核结论送回写稿工单、轮数上限、暂停、停止、输出里的密钥落库前打码、摘要 |
 | `tests/app/test_http_cli.py` | 管理 API 的视图和动作、`/v1/*` 脚本契约、跨站拒绝、钉钉来源的回答 / 跟进 / 指令 / 请求 |
-| `tests/app/test_chatcheck.py` | doctor 的聊天几行：两个命令行都查、只有开着的缺了才算问题；没登录时群名换不了并提示登录；群名找不到或重名报出原因；没配群、home 指向别处；审批人为空时给出能直接抄的写法、不是 open_id 的不生效、本人不在名单里提醒；钉钉登录认 `dws auth status` 的字段 |
-| `tests/app/test_init_local.py` | `superops init` 生成的 `local.yaml`：默认飞书群「测试superops」、lark-cli 登录着就填群 ID 和本人 open_id、代理取包装脚本里的、配上仓库策略能过 `check`、`--reset-local` 先备份、钉钉要给群 |
+| `tests/app/test_chatcheck.py` | doctor 的聊天几行：两个命令行都查、只有开着的缺了才算问题；没登录时群名换不了并提示登录；群名找不到或重名报出原因；没配群、home 指向别处；审批人为空时给出能直接抄的写法、不是 open_id 的不生效、本人不在名单里提醒；钉钉登录认 `dws auth status` 的字段；飞书缺发消息权限要报并给出补授权命令 |
+| `tests/app/test_init_local.py` | `superops init` 生成的 `local.yaml`：默认飞书群「测试superops」、lark-cli 登录着就填群 ID 和本人 open_id、代理取包装脚本里的、配上仓库策略能过 `check`、`--reset-local` 先备份、钉钉要给群；附带注释掉的 GitHub 示例（gh 登录着用登录的账号，去掉注释就是 forge 认得的配置） |
 | `tests/app/test_instance.py` | 部署名：没写时的通用默认值、按 name 推导和单独覆盖、写错时报出是哪一项、数据目录环境变量优先、钥匙串服务名和补密钥命令、launchd 标签和重启判断、另一个配置目录生成的 plist（代码用本仓库，配置和数据用那套的）、积分计数器和面板总览；仓库的配置推出来正好是 Popto 原来的值 |
-| `tests/app/test_preflight.py` | 启动检查：只查启用的规则用得到的、缺口发到 home 渠道且一天一次、全部就绪不出声、登录检查失败照实报告、缓存与复查 |
+| `tests/app/test_preflight.py` | 启动检查：只查启用的规则用得到的、缺口发到 home 渠道且一天一次、全部就绪不出声、登录检查失败照实报告、缓存与复查；只接了 GitHub 仓库时不要 GitLab 令牌、查 gh 登录 |
 | `tests/app/test_lark.py` | 飞书：钉钉和飞书二选一、自动回复名字跟着开着的那个、字段整理、轮询运营群（从现在开始、系统发的跳过、我打的批红生效、名单外不执行、@兔管家 是新请求）、轮询单聊和 @我 交给自动回复、发消息记 ID、自动回复用引用回复；群可以写群名（只查一次、记下给面板显示、换不出来的报出并一分钟后重试）；登录状态新旧两种 `auth status` 输出都认 |
 | `tests/app/test_chat.py` | 聊天渠道：叠加规则（选哪个只开哪个、home 跟过去）、配群加审批人再切换并重启、飞书没登录不能切、改正在用的钉钉群要重启、按群名设置、不是 launchd 起的不自己重启 |
 | `tests/app/test_skills.py` | Skill 页：列表（来源、规则、缺的 Skill）、改 SKILL.md 留历史并能恢复、校验、防覆盖、外部只读、名字不能带路径 |
@@ -354,6 +357,8 @@ flowchart TB
 | `tests/biz/test_biz_schema_and_time.py` | Skill 输出 Schema、JSON 提取、时长与静默窗口、定时表、配置加载 |
 | `tests/biz/test_biz_bizviews.py` | 业务统计 |
 | `tests/biz/test_biz_agent_browser.py` | `ops-browser` 的包装和拦截 |
+| `tests/biz/test_biz_github.py` | GitHub：gh api 客户端（字段换成 GitLab 的形状、checks 合成流水线状态、改动分页、评论标签开 PR 合并删分支、出错带原因）、forge 按写法分两种、基线分支规则、MR / PR 链接匹配不串号、需求随 PR 合并完成、轮询同时接两种、GitHub 仓库的 worktree |
+| `tests/biz/test_biz_ci_checks.py` | doctor 的“开发与合并”：没接仓库只提示、GitHub 各项（gh、登录、repo 权限范围、推送凭据、写权限、本机路径和 origin）、GitLab 地址和令牌 |
 | `tests/biz/test_biz_worktree.py` | worktree 的建立、推送、开 MR |
 
 共用的夹具：`tests/helpers.py`（领域测试的假策略、假研判方、假执行器和装好的引擎）、`tests/app/conftest.py`（临时仓库和数据目录、同步模式的 Runtime）、`tests/app/worlds.py`（自带策略的 Runtime）、`tests/app/mock_agent.py`、`tests/app/pool_agent.py`、`tests/app/route_agent.py`（假的执行器 Agent、按模式出错的 Agent、假的主 Session）、`tests/biz/conftest.py` 和 `tests/biz/bizhelpers.py`（冻结时间、假宿主）。`tests/app/demo_server.py` 不是测试：它用假数据起一个面板，给改面板的人看。

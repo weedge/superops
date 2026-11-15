@@ -18,6 +18,12 @@ def logged_in(group):
     return {"open_id": "ou_me", "user": "本人", "chat_id": "oc_test"}
 
 
+@pytest.fixture(autouse=True)
+def _no_real_gh(monkeypatch):
+    """生成 GitHub 示例时不去问本机真实的 gh。"""
+    monkeypatch.setattr(cli, "_probe_github", lambda host="github.com": {"host": host})
+
+
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     home, data = tmp_path / "home", tmp_path / "data"
@@ -86,3 +92,17 @@ def test_钉钉要给群_不配聊天软件就落本机收件箱(env):
     assert d["home"]["source"] == "dingtalk" and d["sources"]["dingtalk"]["chats"] == ["cid123=="]
     d = yaml.safe_load(cli.render_local("none"))
     assert "home" not in d and "sources" not in d
+
+
+def test_附带注释掉的GitHub示例_gh登录着就用登录的账号_去掉注释就是能用的配置():
+    text = cli.render_local("lark", None, None, lark_probe=lambda g: {})
+    assert '#   projects: ["github:<owner>/<仓库>"]' in text and "gh auth login --hostname github.com" in text
+    assert yaml.safe_load(text)["ci"]["projects"] == []                     # 只是示例：默认不接任何仓库
+    text = cli.render_local("lark", None, None, lark_probe=lambda g: {}, github_probe=lambda: {"host": "github.com", "account": "weedge"})
+    assert '#   projects: ["github:weedge/<仓库>"]' in text and "gh 已登录 github.com（weedge）" in text
+    from superops.biz.ci import forge
+    lines = text[text.index("# ---- 接 GitHub"):].splitlines()
+    example = yaml.safe_load("\n".join(l[4:] for l in lines if l.startswith(("#   projects:", "#   repos:", "#   base_branch:"))))
+    assert forge.projects(example) == [("github", "weedge/<仓库>")]
+    assert forge.base_branch(example, "weedge/<仓库>", "github") == "main"
+    assert list(example["repos"]) == ["weedge/<仓库>"]

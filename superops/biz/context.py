@@ -252,14 +252,12 @@ class ContextBuilder:
                     "今日 Popto 积分用量")
 
     def p_mr_diff(self, lease, events):
-        """MR 审查：宿主用 Token 取 MR 信息和 diff，审查者只读、不联网也能看到改动。"""
-        from .ci.gitlab import GitLab
+        """MR / PR 审查：宿主用 GitLab Token 或已登录的 gh 取信息和 diff，审查者只读、不联网也能看到改动。"""
+        from .ci import forge
         from ..infra.config import load_agents_config
 
         c = load_agents_config().get("ci") or {}
-        gl = GitLab(c.get("gitlab_url", "https://gitlab.example.com"))
-        if not gl.configured:
-            return
+        clients: dict = {}
         seen = set()
         for e in events:
             d = e.get("data") or {}
@@ -267,6 +265,10 @@ class ContextBuilder:
             if not proj or not iid or (proj, iid) in seen:
                 continue
             seen.add((proj, iid))
+            kind = forge.kind_of(c, proj, d)
+            gl = clients.setdefault(kind, forge.client(c, kind))
+            if not gl.configured:
+                continue
             mr = gl.mr(proj, int(iid)) or {}
             self._write(f"mr_{iid}.json", {k: mr.get(k) for k in ("iid", "title", "description", "source_branch",
                                                                   "target_branch", "sha", "web_url", "labels")},

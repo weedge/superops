@@ -7,8 +7,8 @@
     kind    检查什么                                   怎么补
     login   创作者后台登录态（抖音 / 视频号 / 小红书）    superops publish login <平台>
     login   Agent 专用浏览器登录态（监听、GEO）          superops browse login
-    key     钥匙串密钥（TikHub、GitLab）                security add-generic-password -s <instance.keychain_service>/<名> …
-    tool    本机命令（Agent CLI、dws / lark-cli 及其登录）  安装或登录对应的命令行
+    key     钥匙串密钥（TikHub；接了 GitLab 仓库时的 GitLab 令牌）  security add-generic-password -s <instance.keychain_service>/<名> …
+    tool    本机命令（Agent CLI、dws / lark-cli 及其登录和权限、接了 GitHub 仓库时的 gh 登录）  安装或登录对应的命令行
     tool    Agent 专用浏览器的命令行装在本机（不靠 npx）    superops browse install
 
 只检查“有规则用得到”的：对应规则都停用了，或平台的发布模式是 off、没配 CI 项目，就不查也不提醒。
@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 from pathlib import Path
 
 from ..biz import agent_browser
+from ..biz.ci import checks as ci_checks, forge
 from ..executor.adapters import COMMANDS, adapter_for, direct_bin
 from . import chatcheck
 from ..infra.secrets import add_command, keychain
@@ -49,8 +51,8 @@ def static_checks(cfg: dict, settings: dict) -> list[dict]:
     items: list[dict] = []
     for name, rules in KEY_RULES.items():
         used = _used_by(settings, rules)
-        if name == "gitlab" and not ((cfg.get("ci") or {}).get("projects")):
-            used = []        # 没接入任何仓库：CI 这几条规则不会被触发
+        if name == "gitlab" and "gitlab" not in {k for k, _ in forge.projects(cfg.get("ci") or {})}:
+            used = []        # 没接 GitLab 仓库（没接仓库或只接了 GitHub）：用不到 GitLab 令牌
         if not used:
             continue
         ok = bool(keychain(name))
@@ -86,10 +88,22 @@ def static_checks(cfg: dict, settings: dict) -> list[dict]:
             continue
         status = chatcheck.login_status(app)
         cli = chatcheck.CLI[app]
+        missing = [s for s in chatcheck.LARK_SCOPES if status.get("scopes") is not None and s not in status["scopes"]] if app == "lark" else []
+        fix = chatcheck.LOGIN_FIX[app] if status.get("installed") else chatcheck.INSTALL_FIX[app]
         items.append({"id": f"tool:{cli}", "kind": "tool", "title": f"{chatcheck.TITLES[app]}命令行 {cli}（本人身份）",
-                      "ok": bool(status.get("ok")), "rules": rules,
-                      "detail": f"{status.get('user') or ''} {status.get('detail') or ''}".strip(),
-                      "fix": chatcheck.LOGIN_FIX[app] if status.get("installed") else chatcheck.INSTALL_FIX[app]})
+                      "ok": bool(status.get("ok")) and not missing, "rules": rules,
+                      "detail": (f"{status.get('user') or ''} {status.get('detail') or ''}".strip()
+                                 + (f"；缺权限 {'、'.join(missing)}" if missing else "")),
+                      "fix": f'lark-cli auth login --scope "{" ".join(missing)}"' if missing and status.get("ok") else fix})
+    github = [n for k, n in forge.projects(cfg.get("ci") or {}) if k == "github"]
+    used = _used_by(settings, KEY_RULES["gitlab"])          # 同一批开发与合并的规则
+    if github and used:
+        host = forge.github_host(cfg.get("ci") or {})
+        st = ci_checks.gh_auth(host) if shutil.which("gh") else {"ok": False, "detail": "PATH 里没有 gh"}
+        items.append({"id": "tool:gh", "kind": "tool", "title": f"GitHub 命令行 gh（{host}）", "ok": bool(st.get("ok")), "rules": used,
+                      "detail": f"{st.get('detail') or ''} {st.get('account') or ''}".strip(),
+                      "fix": f"gh auth login --hostname {host} --git-protocol https --web" if shutil.which("gh")
+                      else f"brew install gh，再 gh auth login --hostname {host} --git-protocol https --web"})
     return items
 
 

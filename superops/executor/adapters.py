@@ -23,7 +23,7 @@ _RO = ["Read", "Glob", "Grep"]
 _WS = _RO + ["Write", "Edit", "Bash(python3:*)", "Bash(uv:*)", "Bash(ffmpeg:*)", "Bash(ffprobe:*)", "Bash(node:*)",
              "Bash(npx:*)", "Bash(ls:*)", "Bash(mkdir:*)", "Bash(cp:*)", "Bash(jq:*)"]
 _DEV = _WS + ["Bash(git:*)", "Bash(npm:*)", "Bash(pnpm:*)", "Bash(go:*)", "Bash(make:*)", "Bash(pytest:*)",
-              "Bash(python:*)", "Bash(glab:*)"]
+              "Bash(python:*)"]          # 不给 glab / gh：推送和开 MR / PR 由宿主做
 # 浏览器档位：网页搜索 / 抓取，加宿主给的 ops-browser（提示词里写的是 .venv/bin 下的绝对路径）。2026-11-12 竞品调研
 # 只给了 _WS，Claude 在 -p 模式下这三样全被拒，一个官网都没查到。
 _OPS_BROWSER = str(Path(sys.executable).parent / "ops-browser")
@@ -36,8 +36,8 @@ CLAUDE_DENY = {"readonly": ["Bash", "WebFetch", "WebSearch", "Write", "Edit", "N
                "workspace": ["WebFetch", "WebSearch", "Bash(rm:*)", "Bash(curl:*)", "Bash(wget:*)", "Bash(git:*)",
                              "Bash(glab:*)", "Bash(gh:*)"] + _DENY_ALWAYS,
                "browser": ["Bash(rm:*)", "Bash(git:*)", "Bash(glab:*)", "Bash(gh:*)"] + _DENY_ALWAYS,
-               "dev": ["Bash(rm -rf:*)", "Bash(git push --force:*)", "Bash(git push -f:*)", "Bash(git push origin master:*)",
-                       "Bash(git push origin main:*)", "Bash(glab mr merge:*)", "Bash(gh pr merge:*)"] + _DENY_ALWAYS}
+               # 开发档：推送和开 MR / PR 由宿主做；gh / glab 一律不给（gh auth token 能直接读出令牌）
+               "dev": ["Bash(rm -rf:*)", "Bash(git push:*)", "Bash(glab:*)", "Bash(gh:*)"] + _DENY_ALWAYS}
 
 
 @dataclass

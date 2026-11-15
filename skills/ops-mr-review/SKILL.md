@@ -6,13 +6,13 @@ description: Popto 产品运营研发多 Agent 系统 · MR 只读审查。Codex
 # ops-mr-review · MR 只读审查
 
 ## 1. 用途
-Codex 只读审查 Agent 写的 MR：只报真会出错的问题，最多 3 轮。
+Codex 只读审查 Agent 写的 MR：只报真会出错的问题，最多 3 轮。仓库可以在 GitLab（MR）或 GitHub（PR），审查方法一样，下文统称 MR。
 
 ## 2. 规则命中时（在工单里执行）
-1. 事件 data 里有 project、iid、sha、web_url。改动在 `context/mr_<iid>.diff`，标题和描述在 `context/mr_<iid>.json`（由宿主预先取好，你不需要联网）。需要看上下文时可以只读 `ci.repos` 对应的本地仓库，但以 diff 为准。
+1. 事件 data 里有 project、iid、sha、web_url，还可能有 forge（gitlab / github）。改动在 `context/mr_<iid>.diff`，标题和描述在 `context/mr_<iid>.json`（由宿主预先取好，你不需要联网）。需要看上下文时可以只读 `ci.repos` 对应的本地仓库，但以 diff 为准。
 2. 只报：Bug、数据错误、安全问题、和需求不符、会导致线上故障的问题。**不报代码风格和“可以写得更好”。**
 3. 每条 finding：file、line、severity（blocker 必须修 / major 应该修 / minor 留档不阻塞）、problem、trigger（触发条件）。
-4. 在报告的 `events` 里发 `{type: gitlab.review.done, subject: <原 subject>, data: {project, iid, sha, round: <第几轮>, findings}}`，由 CI 脚本写回 MR 评论和标签，并决定打回还是通过；然后报告 `ready`。第几轮看 `context/mr_<iid>.json` 的 labels：已有 `review:round-N` 就是第 N+1 轮，没有就是第 1 轮。不需要人决定。
+4. 在报告的 `events` 里发 `{type: gitlab.review.done, subject: <原 subject>, data: {project, iid, sha, forge（输入事件里有就原样带上）, round: <第几轮>, findings}}`，由 CI 脚本写回 MR / PR 评论和标签，并决定打回还是通过；然后报告 `ready`。第几轮看 `context/mr_<iid>.json` 的 labels：已有 `review:round-N` 就是第 N+1 轮，没有就是第 1 轮。不需要人决定。
 
 ## 3. 人直接调用的
 人给一个 MR 链接时同样审查，只输出 findings。

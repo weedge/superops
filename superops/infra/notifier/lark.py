@@ -187,8 +187,10 @@ def parse_auth_status(d: dict) -> dict:
     user = (d.get("identities") or {}).get("user") if isinstance(d.get("identities"), dict) else None
     if isinstance(user, dict):
         ok = bool(user.get("available")) and user.get("status") == "ready" and user.get("tokenStatus") != "expired"
+        scopes = user.get("scope")
         return {"ok": ok, "user": user.get("userName"), "open_id": user.get("openId"),
+                "scopes": str(scopes).split() if isinstance(scopes, str) else None,
                 "detail": "已登录" if ok else (user.get("message") or "本人身份没登录或已过期")}
     ok = d.get("tokenStatus") not in ("expired", None) and d.get("identity") == "user"
-    return {"ok": ok, "user": d.get("userName"), "open_id": d.get("userOpenId"),
+    return {"ok": ok, "user": d.get("userName"), "open_id": d.get("userOpenId"), "scopes": None,
             "detail": "已登录" if ok else (d.get("note") or "本人身份没登录或已过期")}
