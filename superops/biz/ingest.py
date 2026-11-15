@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 
 import yaml
 
@@ -229,9 +230,8 @@ def _demand_ids(ops, lease: dict) -> list[str]:
             ids.append(str(d["demand_id"]))
         elif str(e.get("subject") or "").startswith("demand:"):
             ids.append(str(e["subject"]).split(":", 1)[1])
-        elif d.get("iid"):  # 修复 MR：按 MR 链接反查需求
-            for r in ops.execute("SELECT id FROM demands WHERE mr_links LIKE ?", (f"%/merge_requests/{d['iid']}%",)):
-                ids.append(r[0])
+        elif d.get("iid"):  # 修复 MR：按 MR / PR 链接反查需求
+            ids += [r["id"] for r in _demands_with_mr(ops, d.get("project"), d["iid"])]
     task = (lease.get("task") or {}).get("id")
     if not ids and task:
         ids = [r[0] for r in ops.execute("SELECT id FROM demands WHERE task=?", (task,))]
@@ -252,13 +252,25 @@ def prd_writing(ops, out: dict, lease: dict) -> None:
                     (status, out.get("prd_path"), ",".join(links) or None, (lease.get("task") or {}).get("id"), iso(), did))
 
 
+def mr_link_pattern(project: str | None, iid) -> re.Pattern:
+    """需求池里记的 MR / PR 链接：GitLab …/<项目>[/-]/merge_requests/<号>，GitHub …/<owner/repo>/pull/<号>；
+    号后面不能再跟数字（!1 不能匹配到 !12）。"""
+    proj = re.escape(project.strip("/")) + r"(?:/-)?" if project else r"[^,]*?"
+    return re.compile(rf"{proj}/(?:merge_requests|pull)/{int(iid)}(?![0-9])")
+
+
+def _demands_with_mr(ops, project: str | None, iid, extra: str = "") -> list[dict]:
+    pat = mr_link_pattern(project, iid)
+    rows = ops.execute(f"SELECT * FROM demands WHERE mr_links LIKE ? {extra} ORDER BY updated_at DESC", (f"%/{int(iid)}%",))
+    return [dict(r) for r in rows if pat.search(r["mr_links"] or "")]
+
+
 def demand_for_mr(ops, project: str, iid: int) -> dict | None:
-    """MR 对应的需求（按需求池里记的 MR 链接）+ 人最早说这件事的原话。"""
-    r = ops.execute("SELECT * FROM demands WHERE mr_links LIKE ? ORDER BY updated_at DESC LIMIT 1",
-                    (f"%{project}/merge_requests/{iid}%",)).fetchone()
-    if not r:
+    """MR / PR 对应的需求（按需求池里记的链接）+ 人最早说这件事的原话。"""
+    found = _demands_with_mr(ops, project, iid)
+    if not found:
         return None
-    d = dict(r)
+    d = found[0]
     q = ops.execute("SELECT quote FROM signals WHERE demand_id=? ORDER BY created_at LIMIT 1", (d["id"],)).fetchone()
     d["quote"] = q[0] if q else ""
     d["is_test"] = bool(d.get("is_test")) or looks_like_test(d.get("title"), d["quote"])
@@ -266,11 +278,10 @@ def demand_for_mr(ops, project: str, iid: int) -> dict | None:
 
 
 def demand_merged(project: str, iid: int, ops_db=None) -> list[str]:
-    """MR 合并（卡片合并或在 GitLab 上直接合并）：关联的需求标为 done。"""
+    """MR / PR 合并（卡片合并或在 GitLab / GitHub 上直接合并）：关联的需求标为 done。"""
     ops = db.open_ops(ops_db)
     try:
-        like = f"%{project}/merge_requests/{iid}%"
-        ids = [r[0] for r in ops.execute("SELECT id FROM demands WHERE mr_links LIKE ? AND status<>'done'", (like,))]
+        ids = [r["id"] for r in _demands_with_mr(ops, project, iid, "AND status<>'done'")]
         for did in ids:
             ops.execute("UPDATE demands SET status='done', updated_at=? WHERE id=?", (iso(), did))
         ops.commit()

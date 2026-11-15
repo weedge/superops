@@ -14,6 +14,9 @@ from .settings import CHAT_APPS
 TITLES = {"dingtalk": "钉钉", "lark": "飞书"}
 CLI = {"dingtalk": "dws", "lark": "lark-cli"}
 LOGIN_FIX = {"dingtalk": "dws auth login --recommend", "lark": "lark-cli auth login --domain im（本人身份，7 天续一次）"}
+# 本人身份必须有的权限（scope → 用来做什么）。只列实际踩过的：少了 im:message.send_as_user 时确认、问题卡片、结果都发不出去，
+# 发件箱一直重试（2026-11-15）。auth status 不给权限列表时（旧版 lark-cli）不查。
+LARK_SCOPES = {"im:message.send_as_user": "以你的身份往群里发消息（确认、问题卡片、结果）"}
 INSTALL_FIX = {"dingtalk": "安装钉钉命令行 dws，再 dws auth login --recommend",
                "lark": "npm install -g @larksuite/cli，再 lark-cli config init --new 和 lark-cli auth login --domain im"}
 
@@ -108,6 +111,11 @@ def check(settings: dict, *, status=None, find_chat=None) -> list[dict]:
         st = status(app) if path else {"ok": False, "detail": "命令行没装"}
         who = " ".join(x for x in (st.get("user"), st.get("open_id")) if x)
         rows.append(_row(f"{title}登录（本人身份）", bool(st.get("ok")), f"{st.get('detail') or ''} {who}".strip(), LOGIN_FIX[app]))
+        if app == "lark" and st.get("ok") and st.get("scopes") is not None:
+            missing = [s for s in LARK_SCOPES if s not in st["scopes"]]
+            rows.append(_row("飞书权限", not missing,
+                             "；".join(f"缺 {s}：{LARK_SCOPES[s]}做不了" for s in missing) or f"{'、'.join(LARK_SCOPES)} 都有",
+                             f'lark-cli auth login --scope "{" ".join(missing)}"（在终端里运行，按提示在浏览器里授权）'))
 
         config = (sources.get(app) or {}).get("config") or {}
         chats = [str(c) for c in config.get("chats") or []]

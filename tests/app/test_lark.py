@@ -167,11 +167,13 @@ def test_登录状态_新旧两种输出都认():
     new = {"identity": "user", "identities": {
         "bot": {"status": "ready", "available": True},
         "user": {"status": "ready", "available": True, "message": "User identity: ready", "openId": "ou_me", "userName": "本人",
-                 "tokenStatus": "valid"}}}
-    assert lark.parse_auth_status(new) == {"ok": True, "user": "本人", "open_id": "ou_me", "detail": "已登录"}
+                 "tokenStatus": "valid", "scope": "im:chat:read im:message.send_as_user"}}}
+    assert lark.parse_auth_status(new) == {"ok": True, "user": "本人", "open_id": "ou_me", "detail": "已登录",
+                                           "scopes": ["im:chat:read", "im:message.send_as_user"]}
     expired = {"identities": {"user": {**new["identities"]["user"], "tokenStatus": "expired"}}}
     assert lark.parse_auth_status(expired)["ok"] is False
     missing = {"identities": {"user": {"status": "missing", "available": False, "message": "User identity: not logged in"}}}
-    assert lark.parse_auth_status(missing) == {"ok": False, "user": None, "open_id": None, "detail": "User identity: not logged in"}
+    assert lark.parse_auth_status(missing) == {"ok": False, "user": None, "open_id": None, "detail": "User identity: not logged in",
+                                               "scopes": None}
     old = {"identity": "user", "tokenStatus": "valid", "userName": "本人", "userOpenId": "ou_me"}
     assert lark.parse_auth_status(old)["ok"] is True and lark.parse_auth_status(old)["open_id"] == "ou_me"

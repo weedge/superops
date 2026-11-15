@@ -355,8 +355,9 @@ class TicketExecutor:
                     return True
                 cwd = wt.path
                 extra_dirs.append(wtmod.git_common_dir(wt))
+                word = "PR" if wt.forge == "github" else "MR"
                 notes.append(f"开发环境已准备好：当前目录是 `{wt.project}` 的独立 worktree（{wt.path}），分支 `{wt.branch}`，基于 `origin/{wt.base}`。"
-                             "直接在这里改代码、跑检查、`git commit`。不要 push、不要开 MR、不要切分支：你这一轮结束后宿主会推送并开 MR，"
+                             f"直接在这里改代码、跑检查、`git commit`。不要 push、不要开 {word}、不要切分支、不要用 gh / glab：你这一轮结束后宿主会推送并开 {word}，"
                              "标题和描述取你报告里的 `mr_title` / `mr_description`。")
             producers = tuple({(t.get("meta") or {}).get("data", {}).get("producer") for t in triggers} - {None}) if role == "review" else ()
             sessions = rt.store.get(f"session:{ticket_id}", {})
@@ -451,19 +452,20 @@ class TicketExecutor:
         try:
             pub = wtmod.publish(self.rt.cfg, wt, legacy, agent, ticket["execution"]["name"])
         except Exception as error:  # noqa: BLE001
-            out["state"], out["summary"] = "failed", f"{out['summary']}（代码已提交在 {wt.path}，但推送 / 开 MR 失败：{str(error)[:300]}）"[:600]
+            out["state"], out["summary"] = "failed", f"{out['summary']}（代码已提交在 {wt.path}，但推送 / 开 {'PR' if wt.forge == 'github' else 'MR'} 失败：{str(error)[:300]}）"[:600]
             return []
         if pub.get("pushed"):
-            out["summary"] = f"{out['summary']}（已推送 {wt.branch}，MR：{pub['mr_url']}）"[:600]
+            out["summary"] = f"{out['summary']}（已推送 {wt.branch}，{'PR' if wt.forge == 'github' else 'MR'}：{pub['mr_url']}）"[:600]
             out["output"] = {**(out.get("output") or {}), "mr_url": pub["mr_url"], "branch": wt.branch}   # 入库时更新需求的 MR 链接
             if pub.get("iid"):
                 subject = f"mr:{wt.project}!{pub['iid']}"
                 self.rt.engine.bind_thread(ticket["id"], {"source": "pipeline", "id": subject}, True)  # 工单跟着自己的 MR，合并 / 关闭时结束
                 return [{
                     "source": "ci", "type": "gitlab.mr.updated" if wt.iid else "gitlab.mr.opened", "subject": subject, "link": pub["mr_url"],
-                    "summary": f"MR {wt.project}!{pub['iid']} 有新提交（{agent} 推送）", "dedup_key": f"mr:{wt.project}:{pub['iid']}:{pub['sha']}",
+                    "summary": f"{'PR' if wt.forge == 'github' else 'MR'} {wt.project}!{pub['iid']} 有新提交（{agent} 推送）",
+                    "dedup_key": f"mr:{wt.project}:{pub['iid']}:{pub['sha']}",
                     "data": {"project": wt.project, "iid": pub["iid"], "sha": pub["sha"], "producer": agent, "web_url": pub["mr_url"],
-                             "title": out.get("mr_title")}}]
+                             "title": out.get("mr_title"), "forge": wt.forge}}]
         elif pub.get("dirty"):
             out["summary"] = f"{out['summary']}（注意：{wt.path} 有未提交的改动，没有推送）"[:600]
         return []

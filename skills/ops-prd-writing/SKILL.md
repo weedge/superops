@@ -21,7 +21,7 @@ description: Popto 产品运营研发多 Agent 系统 · PRD 与开发 / 修复 
      然后报告 `waiting`：工单从此跟着这个 MR。
    - 选了 `revise`：按人写的原因改 PRD，再问一次。
    - 选了 `reject`，或到期未答：不开发、不重问，报告 `ready`，`summary` 写明结论。
-4. **修复 MR**（跟着 MR 的工单收到系统事件 gitlab.review.changes_requested / gitlab.pipeline.failed；原工单已不在时，规则“流水线失败 / 审查打回 → 作者修复”会新开一张工单做同样的事）：当前目录是该 MR 源分支的 worktree，只修 findings 指出的问题并 `git commit`（宿主推到同一分支），不扩大范围。判断某条意见不成立时不改，在 `summary` 写明理由。修完报告 `waiting`。
+4. **修复 MR**（GitHub 仓库里就是 PR，做法一样；跟着 MR 的工单收到系统事件 gitlab.review.changes_requested / gitlab.pipeline.failed；原工单已不在时，规则“流水线失败 / 审查打回 → 作者修复”会新开一张工单做同样的事）：当前目录是该 MR 源分支的 worktree，只修 findings 指出的问题并 `git commit`（宿主推到同一分支），不扩大范围。判断某条意见不成立时不改，在 `summary` 写明理由。修完报告 `waiting`。
 5. **测试需求**：需求池里 `is_test` 为真、标题带【测试】，或原话写了“测试”“不合并”之类的，是用来测流水线的。PRD 卡片标题、`mr_title` 都以【测试】开头；卡片的 risks 和 `mr_description` 第一行照原话写明人的要求（例如“原话：MR 不合并”）。合并卡片由宿主按需求池生成，会同样标出。
 6. MR 合并或关闭时工单由宿主结束，不用你报告 `ready`。MR 线程上的其他事件（审查通过、等人批合并等）不用处理，保持 `waiting`。
 

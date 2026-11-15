@@ -64,7 +64,7 @@ superops 是 Popto 产品运营研发多 Agent 系统（本机运行）：定时
 
 ```bash
 uv sync                      # 装依赖需要代理时先 export https_proxy=… http_proxy=…
-uv run superops init         # 建数据目录和两个库，生成 ~/popto-superops-data/local.yaml（默认用飞书群「测试superops」）
+uv run superops init         # 建数据目录和两个库，生成 ~/popto-superops-data/local.yaml（默认用飞书群「测试superops」，附接 GitHub 仓库的例子）
 uv run superops doctor       # 检查 Agent CLI、飞书 / 钉钉命令行和登录、群、审批人、ffmpeg、钥匙串、策略、宿主是否在跑
 uv run pytest -q
 uv run superops run          # 前台启动：来源、评估、执行器、发件箱、管理 API 和面板（127.0.0.1:8797）
@@ -103,7 +103,7 @@ uv run superops inbox
 
    群 ID 用 `dws chat +chat-search --query 运营` 查。`allowed` 里的人能在群里提请求、批所有问题、下指令；群消息事件带 `openDingTalkId`，卡片回调带 `userId`，两个都填，不认昵称。`answerers` 按规则 id 限定只能批某一类问题的人。想把某条规则的问题卡片发到另一个群，写 `sources.dingtalk.rule_chats: {lead-card: "<群 ID>"}`，那个群也会被监听。改完重启宿主。
 2. **密钥和登录**：见下面的“要提前登录的和要提前放好的密钥”。
-3. **CI**：`local.yaml` 的 `ci.projects` 填要接入的仓库（如 `popto/frontend_popto`），`ci.repos` 填各项目在本机的路径；`ci.auto_merge` 保持 `false`（合并都发卡片），跑稳后再打开；`ci.verify` 给每个项目配线上版本地址（如 `https://…/version.json`，内容里要有提交号），合并后自动核实上线，没配的合并后会请人确认上线（见 006 的“开发与合并”）。
+3. **CI**：`local.yaml` 的 `ci.projects` 填要接入的仓库（GitLab 如 `popto/frontend_popto`，GitHub 写 `github:<owner>/<repo>`，可以同时接），`ci.repos` 填各项目在本机的路径；`ci.auto_merge` 保持 `false`（合并都发卡片），跑稳后再打开；`ci.verify` 给每个项目配线上版本地址（如 `https://…/version.json`，内容里要有提交号），合并后自动核实上线，没配的合并后会请人确认上线（见 006 的“开发与合并”）。 GitHub 仓库要先 `gh auth login` 和 `gh auth setup-git`，`superops doctor` 的“开发与合并”几行逐项查（见 006 的“开发与合并”）。
 4. **常驻**：`uv run superops launchd install` 生成 `~/Library/LaunchAgents/cn.popto.superops.plist`，确认无误后 `uv run superops launchd install --load`。
 5. **Agent 专用浏览器**：`uv run superops browse install`（把 playwright-cli 装到数据目录 `tools/`，要走代理时加 `--proxy <npm 代理>`），再 `uv run superops browse login` 打开有界面的 Chrome，把要用的站点逐个登录后回车（`uv run superops browse sites` 看清单，也可以只登几个：`superops browse login douyin doubao`）。登录态存在 `~/popto-superops-data/browser-profiles/agent-browse`，和发布用的各平台目录分开；建议用专门的小号。`uv run superops browse check` 检查。
 6. **自动发布的登录**（要用才配）：`uv run superops publish login douyin`，`uv run superops publish check` 检查；各平台的模式在 `agents.yaml` 的 `publishers`（默认 `dry_run`；`draft` 填好存草稿不发布，`live` 直接发布）。发布时间按发布包里的 `scheduled_at`：批准时离它还来得及就用平台的“定时发布”，来不及就立即发布（细节见 [docs/006-deployment.md](docs/006-deployment.md) 的“自动发布”）。
@@ -120,7 +120,8 @@ uv run superops inbox
 | 抖音 / 视频号 / 小红书创作者后台登录 | 执行已批准的发布（自动发布、试运行、存草稿）；到点的指标快照和手动采集（读创作者后台，复用同一份登录态）；线索跟进并发评论（抖音） | 面板“内容 → 账号”扫码，或 `superops publish login douyin`（`wechat_channels`、`xiaohongshu` 同理）：打开有界面的 Chrome，人扫码。同一平台可以加多个号（面板“添加账号”，账号键 `douyin@2`…），不指定账号的发布、评论引流、登录检查用这个平台的默认账号 | `~/popto-superops-data/browser-profiles/<账号键>/`（主号的账号键就是平台名） |
 | Agent 专用浏览器登录 | 社媒监听的浏览器补位（知乎、B站、搜狗微信）、GEO 检查 | `superops browse install`，再 `superops browse login`（建议用专门的小号） | `~/popto-superops-data/browser-profiles/agent-browse/` |
 | TikHub 密钥 | 社媒监听（接口：搜作品、按人群词找人、补粉丝数）；评论采集；抖音指标读不到后台时的兜底 | `security add-generic-password -s popto-ops/tikhub -a popto-ops -w <key>` | 钥匙串 |
-| GitLab 令牌（机器人账号，api 权限） | 接入了仓库（`ci.projects` 非空）时的 CI 轮询、MR 审查与写回、合并闸门、合并、开发工单的推送和开 MR | `security add-generic-password -s popto-ops/gitlab -a popto-ops -w <token>` | 钥匙串 |
+| GitLab 令牌（机器人账号，api 权限） | 接了 GitLab 仓库时的 CI 轮询、MR 审查与写回、合并闸门、合并、开发工单的推送和开 MR | `security add-generic-password -s popto-ops/gitlab -a popto-ops -w <token>` | 钥匙串 |
+| GitHub 登录（gh） | 接了 GitHub 仓库时的同一批事：轮询 PR、审查写回、合并闸门、合并、推送和开 PR | `gh auth login --hostname github.com --git-protocol https --web`，再 `gh auth setup-git` | gh 自己（钥匙串） |
 | Agent 命令行已登录（Claude / Codex / Antigravity） | 所有 Agent 执行的规则 | 各自的命令行登录一次；`superops doctor` 看找到的命令在哪（装没装看命令本身，包装脚本可有可无） | 各 CLI 自己的目录 |
 | `dws` 已登录 | 钉钉来源（收群消息、发卡片） | `dws auth login` | dws 自己的配置 |
 

@@ -59,14 +59,27 @@ notifier:
   dingtalk:
     identity: user
 
+# ---- 需求开发：建分支 → 推送 → 开 MR / PR → 审查 → 合并。GitLab 和 GitHub 可以同时接；superops doctor 的“开发与合并”逐项查
 ci:
-  gitlab_url: https://gitlab.example.com
-  projects: []              # 例如 popto/frontend_popto
+  gitlab_url: https://gitlab.example.com    # 接 GitLab 时填；令牌放钥匙串（doctor 里有命令）
+  github_host: github.com   # 接 GitHub 时：先 gh auth login --hostname github.com --git-protocol https --web
+  github_merge_method: merge  # merge | squash | rebase
+  projects: []              # 例如 [popto/frontend_popto, "github:<owner>/<repo>"]；GitHub 写 github: 前缀或完整地址
   auto_merge: false         # 先都请人批
-  base_branch: master
-  repos: {{}}                 # GitLab 项目 → 本机仓库路径
+  base_branch: master       # GitLab 用；GitHub 仓库默认往仓库的默认分支合；按项目写成 {{<项目>: <分支>}}
+  repos: {{}}                 # 项目 → 本机仓库路径（origin 要指向这个项目），例如 {{"<owner>/<repo>": ~/code/<repo>}}
   verify: {{}}                # 合并后核实线上版本：{{<项目>: {{url: https://…/version.json, within: 24h}}}}；没配的合并后请人确认上线
+{github_example}
 """
+
+GITHUB_EXAMPLE = """
+# ---- 接 GitHub 仓库的例子：把上面 ci 里的 projects / repos 换成下面这样（去掉 # ），再跑 superops doctor 看“开发与合并”几行
+#   projects: ["github:{owner}/<仓库>"]            # 也可以写 https://{host}/{owner}/<仓库>；GitLab 项目写在同一个列表里
+#   repos: {{"{owner}/<仓库>": ~/code/<仓库>}}        # 本机 clone 的路径，origin 要指向这个仓库
+#   base_branch: {{"{owner}/<仓库>": main}}           # 可不写：GitHub 仓库默认往仓库的默认分支合
+# 准备（一次）：{prepare}
+#   gh auth setup-git                               # git push 用 gh 的凭据（已能用钥匙串凭据推送的可跳过）
+#   git clone https://{host}/{owner}/<仓库>.git ~/code/<仓库>"""
 
 
 def client(timeout: float = 20) -> HubClient:
@@ -158,7 +171,7 @@ def wrapper_proxy_default() -> str | None:
 
 
 def render_local(chat: str = "lark", group: str | None = None, proxy: str | None = None,
-                 lark_probe=None) -> str:
+                 lark_probe=None, github_probe=None) -> str:
     """生成 local.yaml。飞书：lark-cli 登录着就把群名换成群 ID、把本人 open_id 填进审批人；没登录先写群名，启动后由来源去换。"""
     if chat == "lark":
         group = group or "测试superops"
@@ -174,7 +187,25 @@ def render_local(chat: str = "lark", group: str | None = None, proxy: str | None
         block = CHAT_DINGTALK.format(group=group or "<群 openConversationId>")
     else:
         block = CHAT_NONE + "\n" + CHAT_SWITCH_NOTE
-    return LOCAL_TEMPLATE.format(proxy=f'"{proxy}"' if proxy else "null", chat=block.rstrip("\n"))
+    return LOCAL_TEMPLATE.format(proxy=f'"{proxy}"' if proxy else "null", chat=block.rstrip("\n"),
+                                 github_example=github_example((github_probe or _probe_github)()))
+
+
+def github_example(gh: dict) -> str:
+    """local.yaml 里注释掉的 GitHub 示例：gh 登录着就用登录的账号当 owner，准备那步写“已登录”。"""
+    host, owner = gh.get("host") or "github.com", gh.get("account") or "<owner>"
+    prepare = (f"gh 已登录 {host}（{owner}），不用再登录" if gh.get("account")
+               else f"brew install gh（没装的话）；gh auth login --hostname {host} --git-protocol https --web")
+    return GITHUB_EXAMPLE.format(owner=owner, host=host, prepare=prepare)
+
+
+def _probe_github(host: str = "github.com") -> dict:
+    """gh 登录着的话：登录的账号（给示例当 owner）。没装、没登录都返回只有 host 的。"""
+    if not shutil.which("gh"):
+        return {"host": host}
+    from .biz.ci.checks import gh_auth
+    st = gh_auth(host)
+    return {"host": host, "account": st.get("account") if st.get("ok") else None}
 
 
 def _probe_lark(group: str) -> dict:
@@ -326,10 +357,11 @@ def cmd_doctor(a) -> None:
             note += f"；{'/'.join(ac['strict_tiers'])} 档位直调命令本体"
         rows.append((f"Agent {name}", ok, note))
     rows += chat_rows()
+    rows += dev_rows(cfg)
     for tool in ("ffmpeg", "whisper-cli", "uv"):
         rows.append((tool, bool(shutil.which(tool)), shutil.which(tool) or "未找到"))
     from .infra.secrets import add_command, keychain, service_for
-    for k in ("tikhub", "redfox", "gitlab"):
+    for k in ("tikhub", "redfox"):                 # GitLab 令牌在“开发与合并”里查（接了 GitLab 仓库才要）
         rows.append((f"钥匙串 {service_for(k)}", bool(keychain(k)), "已配置" if keychain(k) else add_command(k)))
     from .biz import agent_browser as ab
     abs_ = ab.settings(cfg)
@@ -377,6 +409,16 @@ def effective_settings() -> dict:
     finally:
         if store:
             store.close()
+
+
+def dev_rows(cfg: dict) -> list[tuple[str, bool, str]]:
+    """doctor 的开发与合并几行：git、GitLab 令牌 / GitHub 的 gh 登录和推送凭据、每个仓库的权限和本机路径。"""
+    from .biz.ci import checks
+    try:
+        found = checks.check(cfg)
+    except Exception as error:  # noqa: BLE001
+        return [("开发与合并", False, f"没查成：{str(error)[:160]}")]
+    return [(r["title"], r["ok"], r["detail"] + (f" → {r['fix']}" if r.get("fix") else "")) for r in found]
 
 
 def chat_rows() -> list[tuple[str, bool, str]]:

@@ -114,3 +114,13 @@ def test_dws没装():
         assert chatcheck.dws_status() == {"installed": False, "ok": False, "detail": "PATH 里没有 dws"}
     finally:
         shutil.which = real
+
+
+def test_飞书缺发消息的权限要报_给出补授权的命令_旧版没有权限列表不查():
+    have = {**LOGGED_IN, "scopes": ["im:chat:read", "im:message:readonly"]}
+    r = rows(settings(allowed=[{"id": "ou_me"}]), status=have)
+    assert r["飞书权限"]["ok"] is False and "im:message.send_as_user" in r["飞书权限"]["detail"]
+    assert r["飞书权限"]["fix"].startswith('lark-cli auth login --scope "im:message.send_as_user"')
+    ok = rows(settings(allowed=[{"id": "ou_me"}]), status={**have, "scopes": have["scopes"] + ["im:message.send_as_user"]})
+    assert ok["飞书权限"]["ok"] is True
+    assert "飞书权限" not in rows(settings(allowed=[{"id": "ou_me"}]))       # scopes 是 None：不查
