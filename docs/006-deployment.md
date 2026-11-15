@@ -116,7 +116,7 @@ policy:
 
 `chats`、`rule_chats` 和 `home.address.chat` 都可以写群名：飞书来源第一次用到时用 `im +chat-search` 换成群 ID（只认完全一样且唯一的群名），记下来，面板上按群名显示；换不出来的（没登录、重名、改了名）先跳过，在来源状态里报出原因，每分钟重试一次。写群 ID 不依赖群名，群改名也不受影响。
 
-**生成配置**：`superops init` 生成的 `local.yaml` 默认就是飞书：`home` 和 `chats` 指向群「测试superops」，钉钉的写法留在注释里。lark-cli 登录着时，群名直接换成群 ID，你的 open_id 也填进 `allowed`；没登录就先写群名、`allowed` 留空（`superops check` 会提醒没人能在群里提请求），登录后用 `lark-cli auth status` 的 `userOpenId` 补上。其他写法：`superops init --group <群名或群 ID>` 换群，`--chat dingtalk --group <openConversationId>` 用钉钉，`--chat none` 不配聊天软件（落本机收件箱）。已有 `local.yaml` 时不覆盖；`--reset-local` 先备份成 `local.yaml.bak-<时间>` 再重新生成。生成的文件末尾还附一段注释掉的接 GitHub 仓库的例子（`projects`、`repos`、`base_branch` 的写法和要准备的命令），gh 登录着时例子里的 owner 就是登录的账号，见“开发与合并”。
+**生成配置**：`superops init` 生成的 `local.yaml` 默认就是飞书：`home` 和 `chats` 指向群「测试superops」，钉钉的写法留在注释里。lark-cli 登录着时，群名直接换成群 ID，你的 open_id 也填进 `allowed`；没登录就先写群名、`allowed` 留空（`superops check` 会提醒没人能在群里提请求），登录后用 `lark-cli auth status` 的 `userOpenId` 补上。其他写法：`superops init --group <群名或群 ID>` 换群，`--chat dingtalk --group <openConversationId>` 用钉钉，`--chat none` 不配聊天软件（落本机收件箱）。已有 `local.yaml` 时不覆盖；`--reset-local` 先备份成 `local.yaml.bak-<时间>` 再重新生成。生成的文件末尾还附一段注释掉的接 GitHub 仓库的例子（`projects`、`repos`、`base_branch` 的写法和要准备的命令），gh 登录着时例子里的 owner 就是登录的账号，见“开发与合并”。已有的 `local.yaml`（旧版生成的）没有这段时，再跑一次 `superops init` 会在末尾补上，只加注释、不改任何配置。
 
 **2026-11-12 切换记录**：钉钉关掉，飞书打开，群是「测试superops」（`oc_xxx`），`home` 也指向它；切换前的配置备份在 `local.yaml.bak-before-lark-20261112`。实测：`lark-cli im +chat-messages-list` 的时间只到分钟、是本地时间，系统消息（建群提示等）跳过；群里 `@兔管家` 的请求半分钟内开出工单并把确认和结果发回群里。
 

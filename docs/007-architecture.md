@@ -324,7 +324,7 @@ flowchart TB
 | `tests/app/test_runtime.py` | 整个应用，用假 Agent 和真实的脚本子进程：明确请求、`observe`、人批准的动作在 `observe` 下照常执行、规则直配、脚本工单及其事件、卡片与只批明细、需要批准的事件、订阅把复核结论送回写稿工单、轮数上限、暂停、停止、输出里的密钥落库前打码、摘要 |
 | `tests/app/test_http_cli.py` | 管理 API 的视图和动作、`/v1/*` 脚本契约、跨站拒绝、钉钉来源的回答 / 跟进 / 指令 / 请求 |
 | `tests/app/test_chatcheck.py` | doctor 的聊天几行：两个命令行都查、只有开着的缺了才算问题；没登录时群名换不了并提示登录；群名找不到或重名报出原因；没配群、home 指向别处；审批人为空时给出能直接抄的写法、不是 open_id 的不生效、本人不在名单里提醒；钉钉登录认 `dws auth status` 的字段；飞书缺发消息权限要报并给出补授权命令 |
-| `tests/app/test_init_local.py` | `superops init` 生成的 `local.yaml`：默认飞书群「测试superops」、lark-cli 登录着就填群 ID 和本人 open_id、代理取包装脚本里的、配上仓库策略能过 `check`、`--reset-local` 先备份、钉钉要给群；附带注释掉的 GitHub 示例（gh 登录着用登录的账号，去掉注释就是 forge 认得的配置） |
+| `tests/app/test_init_local.py` | `superops init` 生成的 `local.yaml`：默认飞书群「测试superops」、lark-cli 登录着就填群 ID 和本人 open_id、代理取包装脚本里的、配上仓库策略能过 `check`、`--reset-local` 先备份、钉钉要给群；附带注释掉的 GitHub 示例（gh 登录着用登录的账号，去掉注释就是 forge 认得的配置）；已有的旧版 `local.yaml` 在末尾补上示例（只加注释、只加一次、配置值不变） |
 | `tests/app/test_instance.py` | 部署名：没写时的通用默认值、按 name 推导和单独覆盖、写错时报出是哪一项、数据目录环境变量优先、钥匙串服务名和补密钥命令、launchd 标签和重启判断、另一个配置目录生成的 plist（代码用本仓库，配置和数据用那套的）、积分计数器和面板总览；仓库的配置推出来正好是 Popto 原来的值 |
 | `tests/app/test_preflight.py` | 启动检查：只查启用的规则用得到的、缺口发到 home 渠道且一天一次、全部就绪不出声、登录检查失败照实报告、缓存与复查；只接了 GitHub 仓库时不要 GitLab 令牌、查 gh 登录 |
 | `tests/app/test_lark.py` | 飞书：钉钉和飞书二选一、自动回复名字跟着开着的那个、字段整理、轮询运营群（从现在开始、系统发的跳过、我打的批红生效、名单外不执行、@兔管家 是新请求）、轮询单聊和 @我 交给自动回复、发消息记 ID、自动回复用引用回复；群可以写群名（只查一次、记下给面板显示、换不出来的报出并一分钟后重试）；登录状态新旧两种 `auth status` 输出都认 |

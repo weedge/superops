@@ -78,10 +78,11 @@ def test_已有local_yaml不覆盖_reset_local先备份再重新生成(env):
     env.mkdir(parents=True, exist_ok=True)
     (env / "local.yaml").write_text("proxy: null\n", encoding="utf-8")
     init()
-    assert (env / "local.yaml").read_text(encoding="utf-8") == "proxy: null\n"
+    kept = (env / "local.yaml").read_text(encoding="utf-8")
+    assert kept.startswith("proxy: null\n") and yaml.safe_load(kept) == {"proxy": None}   # 不覆盖：只在末尾补了注释示例
     init(reset_local=True)
     [backup] = list(env.glob("local.yaml.bak-*"))
-    assert backup.read_text(encoding="utf-8") == "proxy: null\n"
+    assert backup.read_text(encoding="utf-8") == kept
     assert yaml.safe_load((env / "local.yaml").read_text(encoding="utf-8"))["sources"]["lark"]["enabled"] is True
 
 
@@ -106,3 +107,35 @@ def test_附带注释掉的GitHub示例_gh登录着就用登录的账号_去掉�
     assert forge.projects(example) == [("github", "weedge/<仓库>")]
     assert forge.base_branch(example, "weedge/<仓库>", "github") == "main"
     assert list(example["repos"]) == ["weedge/<仓库>"]
+
+
+OLD_LOCAL = """proxy: null
+
+ci:
+  gitlab_url: https://gitlab.example.com
+  projects: []              # 例如 popto/frontend_popto
+  auto_merge: false         # 先都请人批
+  base_branch: master
+  repos: {}                 # GitLab 项目 → 本机仓库路径
+  verify: {}"""                                 # 旧版 init 生成的样子（末尾没换行）
+
+
+def test_已有的旧版local_yaml_init时在末尾补上GitHub示例_只加注释_只加一次(env):
+    env.mkdir(parents=True, exist_ok=True)
+    local = env / "local.yaml"
+    local.write_text(OLD_LOCAL, encoding="utf-8")
+    before = yaml.safe_load(OLD_LOCAL)
+    init()
+    text = local.read_text(encoding="utf-8")
+    assert text.startswith(OLD_LOCAL + "\n") and text.count(cli.GITHUB_MARKER) == 1
+    assert '#   projects: ["github:<owner>/<仓库>"]' in text
+    assert yaml.safe_load(text) == before                                  # 配置一个值都没变
+    init()
+    assert local.read_text(encoding="utf-8") == text                       # 再跑不重复加
+
+
+def test_新生成的local_yaml已经带示例_init不再追加(env):
+    init()
+    text = (env / "local.yaml").read_text(encoding="utf-8")
+    init()
+    assert (env / "local.yaml").read_text(encoding="utf-8") == text and text.count(cli.GITHUB_MARKER) == 1

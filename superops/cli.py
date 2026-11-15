@@ -191,6 +191,19 @@ def render_local(chat: str = "lark", group: str | None = None, proxy: str | None
                                  github_example=github_example((github_probe or _probe_github)()))
 
 
+GITHUB_MARKER = "# ---- 接 GitHub 仓库的例子"
+
+
+def add_github_example(local: Path, probe=None) -> bool:
+    """已有的 local.yaml（旧版 init 生成的）没有 GitHub 示例：在末尾补上那段注释。只追加注释、不改任何配置；有了就不再加。"""
+    text = local.read_text(encoding="utf-8")
+    if GITHUB_MARKER in text:
+        return False
+    with local.open("a", encoding="utf-8") as f:
+        f.write(("" if text.endswith("\n") else "\n") + github_example((probe or _probe_github)()) + "\n")
+    return True
+
+
 def github_example(gh: dict) -> str:
     """local.yaml 里注释掉的 GitHub 示例：gh 登录着就用登录的账号当 owner，准备那步写“已登录”。"""
     host, owner = gh.get("host") or "github.com", gh.get("account") or "<owner>"
@@ -240,6 +253,8 @@ def cmd_init(a) -> None:
     if not local.exists():
         local.write_text(render_local(getattr(a, "chat", "lark"), getattr(a, "group", None), wrapper_proxy_default()), encoding="utf-8")
         local.chmod(0o600)
+    elif add_github_example(local):
+        print("local.yaml 末尾补上了接 GitHub 仓库的例子（只加注释，原有配置没动）")
     print(f"数据目录：{root}\n本机配置：{local}\n下一步：superops doctor；接单模式默认是 observe（只记录“本来会接单”），看一阵没问题再 `superops mode auto`。")
 
 
