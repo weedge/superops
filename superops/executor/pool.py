@@ -23,9 +23,9 @@ from pathlib import Path
 from typing import Callable
 
 from ..app.effects import Later
-from ..biz import redact
-from ..biz.timeutil import iso, now, parse_duration, parse_iso
-from ..biz.validate import validate
+from ..infra import redact
+from ..infra.timeutil import iso, now, parse_duration, parse_iso
+from ..infra.validate import validate
 from . import breaker
 from .adapters import RunResult, RunSpec, adapter_for
 
@@ -84,6 +84,10 @@ class AgentPool:
     def agents(self) -> dict:
         return self.cfg.get("agents") or {}
 
+    def search_path(self) -> str:
+        """agents.yaml 的 path：找 Agent 命令时最先查的目录。"""
+        return os.pathsep.join(os.path.expanduser(p) for p in str(self.cfg.get("path", "")).split(":") if p)
+
     def state(self, agent: str) -> dict:
         return self.store.get(f"agent:{agent}", {"state": "closed"})
 
@@ -93,12 +97,12 @@ class AgentPool:
                        "models": {role: {"model": t.get("model") or cfg.get("default_model"), "effort": t.get("effort") or cfg.get("default_effort")}
                                   for role, t in (cfg.get("models") or {}).items()},
                        "default_model": cfg.get("default_model"), "default_effort": cfg.get("default_effort"),
-                       "installed": adapter_for(cfg).available(cfg), "paused": self.settings.is_paused(f"agent:{name}")}
+                       "installed": adapter_for(cfg).available(cfg, self.search_path()), "paused": self.settings.is_paused(f"agent:{name}")}
                 for name, cfg in self.agents().items()}
 
     def available(self, agent: str) -> bool:
         cfg = self.agents().get(agent)
-        if not cfg or not adapter_for(cfg).available(cfg) or self.settings.is_paused(f"agent:{agent}"):
+        if not cfg or not adapter_for(cfg).available(cfg, self.search_path()) or self.settings.is_paused(f"agent:{agent}"):
             return False
         st = self.state(agent)
         if st.get("state") == "open":
@@ -288,7 +292,7 @@ class AgentPool:
             finally:
                 self._release(agent)
         # 链上还有没试过、本机装了的 Agent（只是在忙、熔断中或被暂停）：排队等它，不记失败
-        remaining = [a for a in chain if a not in tried and adapter_for(self.agents()[a]).available(self.agents()[a])]
+        remaining = [a for a in chain if a not in tried and adapter_for(self.agents()[a]).available(self.agents()[a], self.search_path())]
         if remaining:
             raise Later(f"角色 {role} 的 Agent 暂时不可用（{'忙' if waiting else last.error_kind}），排队等 {remaining[0]}", 30)
         if last.error_kind == "no_agent" and tried:

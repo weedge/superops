@@ -29,10 +29,10 @@ import time
 from collections.abc import Callable, Iterable
 from datetime import datetime
 
-from ..config import load_agents_config
-from .. import paths
+from ...infra.config import load_agents_config
+from ...infra import paths
 from ..client import HubClient
-from ..timeutil import TZ, iso
+from ...infra.timeutil import TZ, iso
 
 log = logging.getLogger("dingtalk-events")
 

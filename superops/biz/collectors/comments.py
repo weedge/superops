@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 
 from .. import db
 from ..scriptkit import emit_result
-from ..timeutil import TZ, iso, now
+from ...infra.timeutil import TZ, iso, now
 from .tikhub import TikHub
 
 ACTIVE_DAYS = 14

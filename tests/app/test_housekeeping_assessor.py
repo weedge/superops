@@ -18,7 +18,7 @@ from conftest import AGENTS, prompts_seen
 from worlds import base_policy, by_rule, decisions, done, make_world, sent, tickets  # noqa: F401
 
 from superops.app import views
-from superops.biz.timeutil import TZ
+from superops.infra.timeutil import TZ
 from superops.core import ticket_stage
 from superops.core.model import now_iso, shift
 from superops.core.reasons import reason_text
@@ -398,22 +398,22 @@ def test_会超出当日预算的规则被忽略并记原因overBudget(rt):
     rt.pipeline.emit({"type": "content.video.requested", "subject": "video:v1"}, trusted=True)
     rt.pump()
     [first] = by_rule(rt, "video")
-    assert first["ended"]["outcome"] == "completed" and rt.counter("popto_credits") == 60   # 脚本报告用了 60 积分
+    assert first["ended"]["outcome"] == "completed" and rt.counter("credits") == 60   # 脚本报告用了 60 积分
     rt.pipeline.emit({"type": "content.video.requested", "subject": "video:v2"}, trusted=True)
     rt.pump()
     assert len(by_rule(rt, "video")) == 1                          # 60 + 60 > 100
     decision = latest(rt, "pipeline:video:v2")
-    assert decision["kind"] == "ignore" and decision["reason"] == [{"code": "overBudget", "values": {"rule": "生成视频", "budget": "Popto 积分"}}]
+    assert decision["kind"] == "ignore" and decision["reason"] == [{"code": "overBudget", "values": {"rule": "生成视频", "budget": "积分"}}]
     assert decision["audit"]["direct"] is True and decision["audit"]["matches"][0]["rule_id"] == "video"
-    assert reason_text(decision["reason"]) == "规则「生成视频」会超出今日 Popto 积分 预算"
+    assert reason_text(decision["reason"]) == "规则「生成视频」会超出今日 积分 预算"
     assert len([r for r in rt.store.runs() if r["role"] == "script"]) == 1
 
 
 def test_刚好用到预算上限的还能接_没有credits_per_run的规则不受预算影响(rt):
-    rt.add_counter("popto_credits", 40)
+    rt.add_counter("credits", 40)
     rt.pipeline.emit({"type": "content.video.requested", "subject": "video:v1"}, trusted=True)     # 40 + 60 = 100，没超
     rt.pump()
-    assert len(by_rule(rt, "video")) == 1 and rt.counter("popto_credits") == 100
+    assert len(by_rule(rt, "video")) == 1 and rt.counter("credits") == 100
     rt.pipeline.emit({"type": "lead.marked", "subject": "lead:l1"}, trusted=True)
     rt.pump()
     assert len(by_rule(rt, "lead-note")) == 1

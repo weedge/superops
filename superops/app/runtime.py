@@ -17,8 +17,8 @@ import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from ..biz import config as bizconfig, governance, paths
-from ..biz.timeutil import TZ, parse_duration
+from ..infra import config as cfgmod, governance, paths
+from ..infra.timeutil import TZ, parse_duration
 from ..core import Engine, EngineOptions
 from ..core.errors import UserError
 from ..core.model import live_ticket, ms, now_iso, parse_time, shift, to_iso
@@ -84,7 +84,7 @@ class Runtime:
     def __init__(self, *, home: Path | None = None, sync: bool = False, cfg: dict | None = None, db: str | Path | None = None):
         self.home = home or paths.ops_home()
         self.data = paths.ensure_data_dirs()
-        self.cfg = cfg if cfg is not None else bizconfig.load_agents_config(self.home)
+        self.cfg = cfg if cfg is not None else cfgmod.load_agents_config(self.home)
         hub = self.cfg.get("hub") or {}
         self.api_url = f"http://{hub.get('host', '127.0.0.1')}:{hub.get('port', 8797)}"
         self.script_token = secrets.token_hex(16)   # 只交给宿主拉起的确定性脚本：带它发的事件才算可信
@@ -470,7 +470,7 @@ class Runtime:
         for name, state in self.agents.states().items():
             since_ = state.get("unavailable_since")
             if state.get("state") == "open" and since_ and cb:
-                from ..biz.timeutil import now as biz_now, parse_iso
+                from ..infra.timeutil import now as biz_now, parse_iso
                 if biz_now() - parse_iso(since_) > cb:
                     self.notify("alert", f"Agent {name} 已不可用超过 {self.cfg.get('alert_after_unavailable', '2h')}",
                                 f"原因：{state.get('kind')}，{state.get('last_error') or ''}", priority=0, ref=f"agent-down:{name}:{since_}", dedup=True)
@@ -479,7 +479,8 @@ class Runtime:
 
     def restartable(self) -> bool:
         """是不是 launchd 拉起来的：是的话退出后会被自动拉起（KeepAlive）。"""
-        return str(os.environ.get("XPC_SERVICE_NAME") or "").startswith("cn.popto.superops")
+        from ..infra.instance import current
+        return str(os.environ.get("XPC_SERVICE_NAME") or "").startswith(current().launchd_label)
 
     def request_restart(self, reason: str) -> bool:
         """过一秒给自己发 SIGTERM：superops run 收到后先关端口、等手头的工单收尾再退出，launchd 再拉起来。

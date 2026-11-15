@@ -19,8 +19,9 @@ import logging
 import re
 import threading
 
-from ..biz import governance
-from ..biz.notifier import DingTalkNotifier, listener
+from ..infra import governance
+from ..infra.notifier import DingTalkNotifier
+from ..biz.notifier import listener
 from ..core.model import now_iso
 from ..core.reasons import key
 from .kind import SourceKind

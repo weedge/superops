@@ -32,7 +32,7 @@
 superops status              # 等你处理的工单、系统问题、过去 24 小时的流量、执行位、不可用的 Agent
 superops preflight           # 上次启动检查的结果：哪些登录态 / 密钥没准备好、影响哪些规则、怎么补
 superops preflight --refresh # 补完之后复查
-superops doctor              # 本机依赖：Agent CLI、dws / lark-cli、ffmpeg、钥匙串、策略、宿主是否在跑
+superops doctor              # 本机依赖：Agent CLI、飞书 / 钉钉命令行和登录、群、home、审批人、ffmpeg、钥匙串、策略、宿主是否在跑
 ```
 
 面板“总览”是同样的内容：顶部是接单模式、暂停数、在岗 Agent，下面是待办（要你回答的问题）、系统问题和公司日志。

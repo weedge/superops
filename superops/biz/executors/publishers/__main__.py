@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sys
 
-from ...config import load_agents_config
+from ....infra.config import load_agents_config
 from ...scriptkit import emit_result, hub_client
 from . import PLATFORMS, account_label, check_login, default_account
 

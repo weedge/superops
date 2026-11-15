@@ -106,7 +106,7 @@ def test_浏览器动作走子进程_同一平台同时只跑一个_检查结果
 
 
 def test_退出登录把登录目录挪走不直接删(world):
-    from superops.biz import paths
+    from superops.infra import paths
     prof = paths.ops_data() / "browser-profiles" / "xiaohongshu"
     (prof / "Default").mkdir(parents=True)
     (prof / "Default" / "Cookies").write_text("x")

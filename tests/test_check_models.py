@@ -51,3 +51,13 @@ def test_角色和强度写错_主Session没有降级链_都会报出来(tmp_pat
     assert any("default_effort 是 extreme" in e for e in new)
     assert any("主 Session 的角色 route" in e for e in new)
     assert any("Agent script：脚本不调用模型" in w for w in warnings)
+
+
+def test_instance写错了先报出来_不再往下读local_yaml(tmp_path, monkeypatch):
+    errors, _ = _home(tmp_path, monkeypatch, lambda cfg: cfg.__setitem__("instance", {"name": "Bad Name"}))
+    assert len(errors) == 1 and errors[0].startswith("agents.yaml 的 instance 写错了") and "instance.name" in errors[0]
+
+
+def test_没写instance_name要提醒用的是默认名(tmp_path, monkeypatch):
+    errors, warnings = _home(tmp_path, monkeypatch, lambda cfg: cfg.pop("instance"))
+    assert any("没写 instance.name" in w and "~/superops-data" in w for w in warnings)

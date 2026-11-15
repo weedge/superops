@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from datetime import timedelta
 
-from ..timeutil import iso, now, parse_iso
+from ...infra.timeutil import iso, now, parse_iso
 
 APPROVAL_TTL = timedelta(hours=24)
 

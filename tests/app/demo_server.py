@@ -99,7 +99,7 @@ def build(tmp: Path, port: int):
 
 def seed(rt) -> None:
     """造场景。顺序有讲究：先在 observe 下留几条“本来会接单”，再切到 auto 造各种工单。"""
-    from superops.biz.timeutil import now as biz_now
+    from superops.infra.timeutil import now as biz_now
     from superops.core.model import running_assignment
     from superops.core.reasons import key
 
@@ -203,7 +203,7 @@ def seed(rt) -> None:
     # ── 一条丢弃的消息（模拟）：发往一个没有会话可回的来源
     rt.outbox.notice({"source": "pipeline", "thread": "content:c_20261111_02", "address": {}}, "复核结论已出，等写稿工单处理",
                      key=key("demo-dropped", writer["id"]), ticket_id=writer["id"])
-    rt.add_counter("popto_credits", 36)
+    rt.add_counter("credits", 36)
     rt.pump()
     assert by_no(1), "演示数据没造出来"
     retitle(rt)
@@ -230,7 +230,7 @@ def seed_business() -> None:
     import json
 
     from superops.biz import db
-    from superops.biz.timeutil import iso, now as biz_now
+    from superops.infra.timeutil import iso, now as biz_now
 
     now = biz_now()
     day = lambda n: (now - timedelta(days=n)).date().isoformat()  # noqa: E731

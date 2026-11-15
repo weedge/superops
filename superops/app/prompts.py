@@ -325,7 +325,7 @@ def render_attention(ticket: dict, attention: dict, rule: dict | None = None) ->
             lines.append(f"- `T{no} {i}{suffix}` → {option['label']}")
         if card.get("on_expire") and attention.get("expiresAt"):
             safe = next((o["label"] for o in options if o["key"] == card["on_expire"]), card["on_expire"])
-            from ..biz.timeutil import TZ
+            from ..infra.timeutil import TZ
             from ..core.model import parse_time
             due = parse_time(attention["expiresAt"])
             when = due.astimezone(TZ).strftime("%m-%d %H:%M") if due else attention["expiresAt"]

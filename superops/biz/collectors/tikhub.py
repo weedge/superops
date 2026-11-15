@@ -1,4 +1,4 @@
-"""TikHub 最小客户端（抖音单条作品数据、评论）。Key 放钥匙串 popto-ops/tikhub。
+"""TikHub 最小客户端（抖音单条作品数据、评论）。Key 放钥匙串 <instance.keychain_service>/tikhub。
 
 注意（实测坑）：必须带非 Python 默认的 User-Agent，否则 Cloudflare 返回 403 / 1010。
 """
@@ -8,7 +8,7 @@ import json
 import urllib.parse
 import urllib.request
 
-from ..scriptkit import keychain
+from ...infra.secrets import keychain, service_for
 
 BASE = "https://api.tikhub.io"
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) popto-ops/0.1"
@@ -27,7 +27,7 @@ class TikHub:
 
     def get(self, path: str, **params) -> dict:
         if not self.key:
-            raise RuntimeError("未配置 TikHub Key（钥匙串 popto-ops/tikhub）")
+            raise RuntimeError(f"未配置 TikHub Key（钥匙串 {service_for('tikhub')}）")
         url = f"{BASE}{path}?{urllib.parse.urlencode(params)}"
         req = urllib.request.Request(url, headers={"Authorization": f"Bearer {self.key}", "User-Agent": UA})
         self.requests += 1

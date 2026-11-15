@@ -17,9 +17,10 @@ import sys
 import urllib.request
 from datetime import timedelta
 
-from ..config import load_agents_config
+from ...infra.config import load_agents_config
+from ...infra.secrets import service_for
 from ..scriptkit import emit_result, hub_client, load_task
-from ..timeutil import iso, now, parse_iso
+from ...infra.timeutil import iso, now, parse_iso
 from . import gate
 from .. import db, ingest
 from .gitlab import GitLab
@@ -157,7 +158,7 @@ def cmd_poll() -> None:
     if not c["projects"]:
         missing.append("local.yaml 的 ci.projects 为空")
     if not gl.configured:
-        missing.append("钥匙串没有 popto-ops/gitlab（GitLab Token）")
+        missing.append(f"钥匙串没有 {service_for('gitlab')}（GitLab Token）")
     if missing:
         emit_result("CI 中台未接入：" + "；".join(missing) + "，跳过")
         return

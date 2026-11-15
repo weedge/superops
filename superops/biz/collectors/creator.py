@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timedelta
 
-from ..timeutil import TZ
+from ...infra.timeutil import TZ
 
 DOUYIN_WORK_LIST = ("https://creator.douyin.com/janus/douyin/creator/pc/work_list"
                     "?status=0&count=12&max_cursor={cursor}&scene=star_atlas&device_platform=android&aid=1128")

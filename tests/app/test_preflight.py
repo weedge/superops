@@ -48,7 +48,7 @@ def test_missing_items_are_announced_once_a_day_and_shown_as_problems(rt):
     rt.pump()
     [message] = [m for m in rt.store.receipts.list() if m["status"] == "sent"]
     assert "启动检查：3 项还没准备好" in message["text"] and "superops publish login douyin" in message["text"]
-    assert "security add-generic-password -s popto-ops/gitlab" in message["text"] and "k" != message["text"]
+    assert "security add-generic-password -s superops/gitlab -a superops -w" in message["text"] and "k" != message["text"]
     assert rt.announce_preflight(rt.preflight(refresh=True, check=logins({}))) is False      # 同样的缺口当天不重复说
     setup = [p for p in views.problems(rt) if p["kind"] == "setup"]
     assert len(setup) == 3 and "影响：执行发布" in next(p["detail"] for p in setup if "抖音" in p["title"])

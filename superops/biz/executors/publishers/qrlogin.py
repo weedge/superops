@@ -20,8 +20,8 @@ import time
 from pathlib import Path
 from urllib.parse import urlparse
 
-from ... import paths
-from ...timeutil import iso
+from ....infra import paths
+from ....infra.timeutil import iso
 from . import ACCOUNTS, PLATFORMS, browser, is_account_key, is_logged_in, platform_of
 
 LOGIN_TIMEOUT_S = 240

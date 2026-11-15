@@ -10,7 +10,7 @@ from superops.core.errors import UserError
 
 @pytest.fixture
 def ui(world, monkeypatch):
-    monkeypatch.setattr(chat, "_lark_auth", lambda: {"ok": True, "user": "张三", "detail": "已登录"})
+    monkeypatch.setattr(chat, "_login", lambda app: {"installed": True, "ok": True, "user": "张三", "detail": "已登录"})
     restarts = []
     monkeypatch.setattr(world, "request_restart", lambda reason: restarts.append(reason) or True)
     world.restarts = restarts
@@ -48,7 +48,7 @@ def test_面板上配群_加审批人_切到飞书_宿主重启(ui):
 
 def test_飞书没登录不能切_改正在用的钉钉群要重启(ui, monkeypatch):
     http.handle_post(ui, "/api/chat", {"action": "set_group", "app": "lark", "group": "oc_x"})
-    monkeypatch.setattr(chat, "_lark_auth", lambda: {"ok": False, "detail": "过期"})
+    monkeypatch.setattr(chat, "_login", lambda app: {"installed": True, "ok": app != "lark", "detail": "过期" if app == "lark" else "已登录"})
     with pytest.raises(UserError, match="lark-cli auth login"):
         http.handle_post(ui, "/api/chat", {"action": "switch", "app": "lark"})
     http.handle_post(ui, "/api/chat", {"action": "set_group", "app": "dingtalk", "group": "cidOPS0000000=="})
@@ -59,7 +59,7 @@ def test_飞书没登录不能切_改正在用的钉钉群要重启(ui, monkeypa
 
 
 def test_按群名设置_找不到唯一的就要ID(ui, monkeypatch):
-    from superops.biz.notifier import lark
+    from superops.infra.notifier import lark
     monkeypatch.setattr(lark, "run", lambda args, **k: {"data": {"chats": [{"chat_id": "oc_A", "name": "测试superops"},
                                                                           {"chat_id": "oc_B", "name": "测试superops2"}]}})
     r = http.handle_post(ui, "/api/chat", {"action": "set_group", "app": "lark", "group": "测试superops"})

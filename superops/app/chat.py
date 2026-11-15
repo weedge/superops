@@ -8,7 +8,6 @@
 """
 from __future__ import annotations
 
-import shutil
 import time
 
 from ..core.errors import UserError
@@ -16,16 +15,16 @@ from .settings import CHAT_APPS
 
 TITLES = {"dingtalk": "钉钉", "lark": "飞书"}
 NAMES_KEY = "chat:names"                 # 群 ID → 群名（面板上按群名设置时记下的）
-_auth_cache: dict = {"at": 0.0, "value": None}
+_auth_cache: dict[str, tuple[float, dict]] = {}
 
 
-def _lark_auth() -> dict:
-    """飞书登录状态，缓存 60 秒（面板每几秒刷新一次，别每次都起一个 lark-cli）。"""
-    if time.time() - _auth_cache["at"] > 60 or _auth_cache["value"] is None:
-        from ..biz.notifier import lark
-        _auth_cache.update(at=time.time(), value=lark.auth_status() if shutil.which("lark-cli") else
-                           {"ok": False, "detail": "PATH 里没有 lark-cli"})
-    return _auth_cache["value"]
+def _login(app: str) -> dict:
+    """钉钉 / 飞书登录状态，缓存 60 秒（面板每几秒刷新一次，别每次都起一个命令行）。"""
+    cached = _auth_cache.get(app)
+    if not cached or time.time() - cached[0] > 60:
+        from .chatcheck import login_status
+        cached = _auth_cache[app] = (time.time(), login_status(app))
+    return cached[1]
 
 
 def view(rt) -> dict:
@@ -35,13 +34,10 @@ def view(rt) -> dict:
     apps = {}
     for app in CHAT_APPS:
         src = s["sources"].get(app) or {"enabled": False, "config": {}}
-        if app == "lark":
-            auth = _lark_auth()
-            login = {"ok": bool(auth.get("ok")), "detail": f"{auth.get('user') or ''} {auth.get('detail') or ''}".strip(),
-                     "fix": "lark-cli auth login（本人身份，7 天续一次）"}
-        else:
-            ok = bool(shutil.which("dws"))
-            login = {"ok": ok, "detail": "dws 已安装" if ok else "PATH 里没有 dws", "fix": "安装 dws 并 dws auth login"}
+        from .chatcheck import INSTALL_FIX, LOGIN_FIX
+        auth = _login(app)
+        login = {"ok": bool(auth.get("ok")), "detail": f"{auth.get('user') or ''} {auth.get('detail') or ''}".strip(),
+                 "fix": LOGIN_FIX[app] if auth.get("installed") else INSTALL_FIX[app]}
         apps[app] = {"title": TITLES[app], "enabled": bool(src["enabled"]),
                      "chats": [{"id": c, "name": names.get(c)} for c in (src["config"].get("chats") or [])],
                      "approvers": (s["policy"]["sources"].get(app) or {}).get("allowed") or [],
@@ -57,9 +53,11 @@ def _resolve_group(app: str, value: str) -> tuple[str, str | None]:
     if app == "lark":
         if value.startswith("oc_"):
             return value, None
-        from ..biz.notifier import lark
-        data = lark.run(["im", "+chat-search", "--query", value, "--format", "json"])
-        hits = [c for c in ((data.get("data") or {}).get("chats") or []) if c.get("name") == value]
+        from ..infra.notifier import lark
+        try:
+            return lark.find_chat(value), value
+        except lark.LarkError as error:
+            raise UserError("invalidSettings", {"error": str(error)}) from error
     else:
         if value.startswith("cid"):
             return value, None

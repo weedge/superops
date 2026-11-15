@@ -251,7 +251,7 @@ MR 开出来之后：
 
 | 预算 | 在哪 | 怎么执行 |
 | --- | --- | --- |
-| Popto 积分 | `agents.yaml` 的 `budgets.popto_credits`（单日 200） | 规则写了 `credits_per_run` 的，接单前检查“今日已用 + 这次预计”会不会超；超了记为忽略（超预算）。实际用量来自报告的 `credits_used` |
+| Popto 积分 | `agents.yaml` 的 `budgets.popto_credits`（单日 200）；计数器名和这个预算键都是 `instance.credits.counter`，提示里的名字是 `instance.credits.label` | 规则写了 `credits_per_run` 的，接单前检查“今日已用 + 这次预计”会不会超；超了记为忽略（超预算）。实际用量来自报告的 `credits_used` |
 | TikHub 请求 | `budgets.tikhub_requests` | 指标采集脚本自己检查 |
 | Claude 周用量 | `usage_policy` | `superops agents usage claude 0.75` 登记后，P2 的工作把 Claude 排到链尾，P3 不用 Claude |
 | 问题卡片 | `max_cards_per_day` | 发件箱顺延 |

@@ -1,8 +1,9 @@
 """执行器的适配器和熔断分类（从 ops 的 tests/test_units.py 带过来），以及会话续接。"""
 import json
+from dataclasses import replace
 from pathlib import Path
 
-from superops.biz import timeutil
+from superops.infra import timeutil
 from superops.executor import breaker
 
 
@@ -69,7 +70,7 @@ def test_codex_reconnect_notices_not_fatal(tmp_path):
 
 
 def test_codex_routing_timeout_is_network():
-    from superops.biz import config
+    from superops.infra import config
     cb = config.load_agents_config(Path(__file__).resolve().parents[2])["circuit_breaker"]
     text = '{"type":"error","message":"Reconnecting... 5/5 (workspace routing discovery timed out)"}'
     assert breaker.classify(text, timed_out=False, cb=cb) == "network"
@@ -258,3 +259,91 @@ def test_模型和强度原样交给命令行_codex_的_max_不再降档(tmp_pat
     cl = replace(_spec(tmp_path, {"type": "claude", "bin": "/opt/claude"}, "readonly"), effort="high", model="fable")
     cmd = ClaudeAdapter().build_cmd(cl)
     assert cmd[cmd.index("--effort") + 1] == "high" and cmd[cmd.index("--model") + 1] == "fable"
+
+
+# ---- 装没装看命令本体，不看包装脚本
+
+def _exe(path, text="#!/bin/sh\necho hi\n"):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    path.chmod(0o755)
+    return path
+
+
+def test_命令找得到就算装了_包装脚本在不在不影响(tmp_path, monkeypatch):
+    from superops.executor import adapters
+    from superops.executor.adapters import ClaudeAdapter
+
+    bindir = tmp_path / "nvm-bin"
+    monkeypatch.setattr(adapters, "command_dirs", lambda search_path="": [str(bindir)])
+    cfg = {"type": "claude", "bin": str(tmp_path / "claude.sh")}                         # 包装脚本不在
+    assert ClaudeAdapter().available(cfg) is False                                         # 命令也没有：没装
+    claude = _exe(bindir / "claude")
+    assert ClaudeAdapter().available(cfg) is True                                          # 有命令：装了
+    spec = _spec(tmp_path, cfg, "workspace")
+    assert ClaudeAdapter().build_cmd(spec)[0] == str(claude)                               # 直接调命令
+    env = ClaudeAdapter().resolve_env(replace(spec, env={"PATH": "/usr/bin", "HTTPS_PROXY": "http://global:1"}))
+    assert env["PATH"].split(":")[0] == str(bindir) and env["HTTPS_PROXY"] == "http://global:1"   # node 和命令同目录
+
+
+def test_包装脚本在但命令没装_算没装(tmp_path, monkeypatch):
+    from superops.executor import adapters
+    from superops.executor.adapters import CodexAdapter
+
+    monkeypatch.setattr(adapters, "command_dirs", lambda search_path="": [str(tmp_path / "empty")])
+    sh = _exe(tmp_path / "codex.sh", '#!/bin/sh\nexec codex "$@"\n')
+    assert CodexAdapter().available({"type": "codex", "bin": str(sh)}) is False
+
+
+def test_包装脚本在也在命令装了_照旧走包装脚本_PATH里补上命令目录(tmp_path, monkeypatch):
+    from superops.executor import adapters
+    from superops.executor.adapters import CodexAdapter
+
+    bindir = tmp_path / "bin"
+    monkeypatch.setattr(adapters, "command_dirs", lambda search_path="": [str(bindir)])
+    _exe(bindir / "codex")
+    sh = _exe(tmp_path / "codex.sh", '#!/bin/sh\nPROXY="http://10.0.0.9:3218"\nexec codex "$@"\n')
+    spec = replace(_spec(tmp_path, {"type": "codex", "bin": str(sh)}, "workspace"), env={"PATH": "/usr/bin"})
+    assert CodexAdapter().build_cmd(spec, tmp_path / "last.txt")[0] == str(sh)
+    env = CodexAdapter().resolve_env(spec)
+    assert env["PATH"] == f"{bindir}:/usr/bin" and "HTTPS_PROXY" not in env                # 代理由包装脚本自己设
+
+
+def test_codex没有strict_bin_找得到命令也能续接(tmp_path, monkeypatch):
+    from superops.executor import adapters
+    from superops.executor.adapters import CodexAdapter
+
+    bindir = tmp_path / "bin"
+    monkeypatch.setattr(adapters, "command_dirs", lambda search_path="": [str(bindir)])
+    codex = _exe(bindir / "codex")
+    spec = replace(_spec(tmp_path, {"type": "codex", "bin": "~/nope.sh", "resume": True}, "readonly"), session="s-1")
+    cmd = CodexAdapter().build_cmd(spec, tmp_path / "last.txt")
+    assert cmd[0] == str(codex) and cmd[cmd.index("exec") + 1] == "resume"
+
+
+def test_command可以指定命令名或路径_断掉的软链接不算(tmp_path, monkeypatch):
+    from superops.executor import adapters
+    from superops.executor.adapters import AntigravityAdapter, find_command
+
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    monkeypatch.setattr(adapters, "command_dirs", lambda search_path="": [str(bindir)])
+    (bindir / "agy").symlink_to(tmp_path / "Antigravity.app" / "antigravity")            # 应用删了，链接还在
+    assert AntigravityAdapter().available({"type": "antigravity"}) is False
+    real = _exe(tmp_path / "Antigravity.app" / "antigravity")
+    assert find_command({"type": "antigravity"}) == str(bindir / "agy")
+    other = _exe(tmp_path / "x" / "my-claude")
+    assert find_command({"type": "claude", "command": "my-claude"}) is None
+    assert find_command({"type": "claude", "command": str(other)}) == str(other)
+    assert real.exists()
+
+
+def test_找命令的目录_配置在前_nvm新版本在前(tmp_path, monkeypatch, real_command_dirs):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PATH", "/usr/bin")
+    for v in ("v18.20.0", "v22.2.0", "v9.1.0"):
+        (tmp_path / ".nvm" / "versions" / "node" / v / "bin").mkdir(parents=True)
+    dirs = real_command_dirs("~/mine:/usr/bin")
+    assert dirs[:2] == [str(tmp_path / "mine"), "/usr/bin"] and dirs.count("/usr/bin") == 1
+    nvm = [d for d in dirs if "/.nvm/" in d]
+    assert [d.split("/")[-2] for d in nvm] == ["v22.2.0", "v18.20.0", "v9.1.0"]

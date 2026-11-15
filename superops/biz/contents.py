@@ -5,7 +5,7 @@ import json
 import re
 from pathlib import Path
 
-from . import paths
+from ..infra import paths
 
 ID_DATE = re.compile(r"c_(\d{4})(\d{2})(\d{2})_")
 # 能自动出图（竖版 3:4 多图）的平台：小红书的“图文”就是多图笔记；知乎、公众号的“图文”是文章，不做成竖图

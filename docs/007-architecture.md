@@ -183,6 +183,14 @@ flowchart TB
 - **核心不依赖核心之外。** `superops/core` 只导入标准库和自己，不做 I/O。时间、仓库、策略、研判、执行、发件箱都从端口进来。
 - **来源不决定工作。** `superops/sources` 只把事件翻译成触发、把消息写到渠道；它读设置里的规则只为两件来源自己的事（缺批准凭据的不收、防抖），不创建工单。
 - **业务模块不知道领域。** `superops/biz` 不导入 `superops/core`、`superops/app`、`superops/executor`、`superops/sources`；确定性脚本通过 `/v1/*` 和宿主说话。
+- **基础设施不知道业务。** `superops/infra` 只导入标准库、第三方库和自己，不导入 `superops/biz`，也不出现平台、内容、线索这类业务名词。各层要用的路径、时间、配置、校验、打码、决策档案、钥匙串、钉钉 / 飞书渠道都从这里取，不从 `biz` 取。
+- **部署名只有一个出处。** 数据目录、钥匙串服务名、launchd 标签、积分计数器名一律问 `superops/infra/instance.py`，代码里不写 `popto` 这类部署名；`instance` 只从仓库的 `agents.yaml` 读（`local.yaml` 本身放在数据目录里）。
+- **还没拆干净的地方。** 下面这些仍是应用层、执行层、来源直接用 Popto 的业务模块，留待拆成业务包的扩展点；新代码不要再加这类依赖：
+  - `app/publishing.py`、`app/http.py` 的内容和账号接口、`app/preflight.py` 的登录与密钥检查，用 `biz/executors/publishers`、`biz/db`、`biz/bizviews`、`biz/contents`、`biz/agent_browser`；
+  - `executor/worker.py` 的上下文、入库、视频抽帧、图文出图、CI worktree，用 `biz/context`、`biz/ingest`、`biz/video_prep`、`biz/render_pages`、`biz/ci`；
+  - `sources/dingtalk.py` 的群聊指令解析用 `biz/notifier/listener.py`，`sources/schedule.py` 用 `biz/scheduler.py`；
+  - `cli.py` 的业务子命令（发布、采集、浏览器、保留期）和 `superops check` 用到的 `biz/context.CONTEXT_PROVIDERS`；
+  - `app/runtime.py` 认的事件类型 `popto.feedback.new`，`app/prompts.py` 的来源名 `popto`，`prompts/shared.md` 开头的业务描述。
 - **一种状态一个写入方。**
 
   | 状态 | 写入方 |
@@ -197,7 +205,7 @@ flowchart TB
   | 计数器 | Runtime（来自报告的 `credits_used` 和 `/v1/counter`） |
   | 健康项 | 各自的部件：`runtime`、`evals` 是 Runtime，`effect:<kind>` 是 Effects，`source:<id>` 是那个来源，`agent:<名>` 是 AgentPool |
   | `ops.db` | 业务模块：采集器、执行器脚本、入库程序 |
-  | `decisions.md` / `not-doing.md` | `superops/biz/governance.py`，只追加 |
+  | `decisions.md` / `not-doing.md` | `superops/infra/governance.py`，只追加 |
 
 - **请求和事实。** 请求可以被拒绝，用祈使命名；记录适配器做了什么的方法用过去时。
 - **固定的拒绝。** 能被人或 Agent 引发的拒绝都是 `USER_ERRORS` 里的码；管理 API 对 `missing` 类回 404，其余回 400。
@@ -235,39 +243,42 @@ flowchart TB
 | `superops/app/chat.py` | 面板“设置 → 聊天渠道”：钉钉 / 飞书二选一的切换（切完宿主自己重启）、改群（群 ID 或群名）、增删审批人；存成运行时覆盖 |
 | `superops/app/skills.py` | 面板“Skill”页：列出仓库和外部目录的 Skill（被哪些规则用、近 30 天工单数和失败数）；看 SKILL.md / schema.json / 文件；在面板上改仓库 Skill 的 SKILL.md（校验 name / description、防覆盖、保存前存一份进数据目录 `skill-history/`），能恢复历史版本；外部目录只读 |
 | `superops/app/autoreply.py` | 钉钉自动回复：别人单聊我、或在运营群以外的群里 @我 时，Agent（只读）起草一段回复以我的身份发出；面板开关 auto / off、过滤群（群 ID 优先、群名兜底）、同一条只回一次、每会话每小时 / 每天限量、要本人拿主意的转告 home 渠道；不进工单 |
+| `superops/app/chatcheck.py` | 聊天软件准备好了没有：`dws` / `lark-cli` 装没装、本人身份登录状态（doctor、启动检查、面板共用）、群（飞书群名能不能换成群 ID）、home、审批人；`superops doctor` 的聊天几行 |
 | `superops/sources/kind.py` | `SourceKind` 协议和 `SourceRegistry` |
 | `superops/sources/schedule.py` | `ScheduleSource` |
 | `superops/sources/pipeline.py` | `PipelineSource`：业务事件、批准守门、防抖、线程关闭 |
 | `superops/sources/cli.py` | `CliSource`：终端里的请求，本机收件箱 |
-| `superops/sources/lark.py` | `LarkSource`（继承钉钉来源的指令处理；和钉钉二选一，由 `settings.normalize` 把关）：以本人身份轮询飞书运营群和单聊 / @我，发消息记 ID 防回声 |
+| `superops/sources/lark.py` | `LarkSource`（继承钉钉来源的指令处理；和钉钉二选一，由 `settings.normalize` 把关）：以本人身份轮询飞书运营群和单聊 / @我，发消息记 ID 防回声；群可以写群名，第一次用到时换成群 ID |
 | `superops/sources/dingtalk.py` | `DingTalkSource`：运营群的消息长连接 + 轮询兜底、卡片回调；另起两条 `dws event +listen-im`（`all-direct` 全部单聊、`at-me` 任何群里 @我），交给 `autoreply.py`（运营群里的 @我 不交） |
 | `superops/executor/worker.py` | `TicketExecutor`：一轮怎么跑、报告怎么落地 |
 | `superops/executor/pool.py` | `AgentPool`、`Outcome`、`agent_env` |
-| `superops/executor/adapters.py` | 各 Agent 的命令行调用、工具档位、`run_process`（超时、无动作提前结束、租约丢失时整组杀掉）、从输出里挑出报告；Codex 续接（`exec resume`，直调 `strict_bin`，续不上新开一次） |
+| `superops/executor/adapters.py` | 找 Agent 命令（`find_command`：装没装看命令本身，包装脚本可有可无）、各 Agent 的命令行调用、工具档位、`run_process`（超时、无动作提前结束、租约丢失时整组杀掉）、从输出里挑出报告；Codex 续接（`exec resume`，直调 `strict_bin`，续不上新开一次） |
 | `superops/executor/breaker.py` | 错误归类、解析恢复时间 |
 | `superops/cli.py` | `superops` 的全部子命令，`check`（配置校验） |
-| `superops/biz/paths.py` | 仓库目录与数据目录 |
-| `superops/biz/config.py` | 读 `agents.yaml`（叠加 `local.yaml`）和 `schedules.yaml`，找 Skill 目录，上下文提供者的名字表 |
-| `superops/biz/timeutil.py` | 上海时区的时间、时长解析、静默窗口 |
-| `superops/biz/ids.py` | 业务对象的 id |
+| `superops/infra/paths.py` | 代码仓库（`code_root`）、配置目录（`ops_home`，即 `SUPEROPS_HOME`）与数据目录 |
+| `superops/infra/config.py` | 读 `agents.yaml`（叠加 `local.yaml`）和 `schedules.yaml`，找 Skill 目录，通知方式 / 工具档位 / 思考强度的取值范围 |
+| `superops/infra/instance.py` | `agents.yaml` 的 `instance`：部署名，以及由它推出的数据目录、钥匙串服务名、launchd 标签、积分计数器名；只读仓库里的 `agents.yaml` |
+| `superops/infra/timeutil.py` | 上海时区的时间、时长解析、静默窗口 |
+| `superops/infra/ids.py` | 业务对象的 id |
+| `superops/infra/governance.py` | 决策档案：追加条目、按关键词找相关条目 |
+| `superops/infra/validate.py` | 卡片和公共输出的 Schema、Skill Schema 的合并、从文本里取 JSON |
+| `superops/infra/redact.py` | 打码：文本、JSON、目录 |
+| `superops/infra/secrets.py` | 读钥匙串里的密钥（`keychain`） |
+| `superops/infra/notifier/__init__.py` | 发钉钉 / 飞书 / 本地文件的通知器；钉钉来源的渠道用其中的 `DingTalkNotifier` |
+| `superops/infra/notifier/lark.py` | 飞书 lark-cli 的封装（本人身份）：拉群消息、搜单聊 / @我、发 Markdown / 文件、引用回复、登录状态；字段整理成和钉钉一样的形状 |
 | `superops/biz/platforms.py` | 平台代码和中文名的归一 |
 | `superops/biz/db.py` | `ops.db` 的表结构和连接 |
 | `superops/biz/client.py` | `HubClient`：脚本回调宿主的 HTTP 客户端 |
-| `superops/biz/scriptkit.py` | 脚本共用：读任务、宿主客户端、输出结果、读钥匙串 |
+| `superops/biz/scriptkit.py` | 脚本共用：读任务、宿主客户端、输出结果 |
 | `superops/biz/scheduler.py` | 定时项 → 最近一次 / 下一次应触发的时刻 |
-| `superops/biz/governance.py` | 决策档案：追加条目、按关键词找相关条目 |
-| `superops/biz/validate.py` | 卡片和公共输出的 Schema、Skill Schema 的合并、从文本里取 JSON |
-| `superops/biz/context.py` | `ContextBuilder`（上下文提供者）、不可信内容的隔离区、Skill 正文的读取、脚本路径的解析 |
+| `superops/biz/context.py` | `ContextBuilder`（上下文提供者）和提供者的名字表 `CONTEXT_PROVIDERS`、不可信内容的隔离区、Skill 正文的读取、脚本路径的解析 |
 | `superops/biz/ingest.py` | Agent 的结构化产出 → `ops.db`，按 Skill 分 |
-| `superops/biz/redact.py` | 打码：文本、JSON、目录 |
 | `superops/biz/contents.py` | 内容的公共小工具：计划日（面板挪过的 planned_date，否则按内容 ID 里的日期）、稿子在哪是图文还是视频、能走自动出图的稿子；日历、今日发布推荐和 `/api/contents` 共用 |
 | `superops/biz/render_pages.py` | 图文出图的渲染工具（Agent 环境里的 `$OPS_RENDER`）：一组 HTML 页面用本机 Chrome 无界面、断网截成固定尺寸的 PNG（默认 1080×1440），报出没加载出来的图片 |
 | `superops/biz/retention.py` | 数据保留期清理、日志轮转、补打码 |
 | `superops/biz/bizviews.py` | 业务统计（面板的业务页）、决策档案的条目 |
 | `superops/biz/agent_browser.py` | Agent 专用浏览器 `ops-browser`：包装、拦截、登录 |
 | `superops/biz/video_prep.py` | 视频抽帧拼宫格和转写：视频工作落到不能直接看视频的 Agent 时用 |
-| `superops/biz/notifier/__init__.py` | 发钉钉 / 飞书 / 本地文件的通知器；钉钉来源的渠道用其中的 `DingTalkNotifier` |
-| `superops/biz/notifier/lark.py` | 飞书 lark-cli 的封装（本人身份）：拉群消息、搜单聊 / @我、发 Markdown / 文件、引用回复、登录状态；字段整理成和钉钉一样的形状 |
 | `superops/biz/notifier/listener.py` | 钉钉事件的解析和权限判断（`classify_event`）、`dws` 事件流和群消息轮询的循环 |
 | `superops/biz/notifier/render.py` | 旧的卡片渲染（Markdown） |
 | `superops/biz/collectors/__init__.py` | 采集器包 |
@@ -306,11 +317,14 @@ flowchart TB
 | `tests/test_core_smoke.py` | 相对原型多出来的部分：问题卡片与批红权限、自己产出的事件不回送、`notBefore` |
 | `tests/test_prompts_skills.py` | 提示词文件齐全且被拼进该去的角色；Skill 文案和 `policy.yaml` 互相对得上 |
 | `tests/test_docs.py` | 编号文档只链接到更早的编号文档；本地链接都能解析；没有合并冲突标记；本文的模块表和测试表没有遗漏；文档里提到的 `superops` 子命令都存在 |
-| `tests/test_check_models.py` | `superops check` 对 agents.yaml 模型和思考强度的校验：仓库里的配置本身没问题；角色、强度写错、主 Session 的角色没有降级链会报错，脚本类 Agent 配了模型会提醒 |
+| `tests/test_check_models.py` | `superops check` 对 agents.yaml 模型和思考强度的校验：仓库里的配置本身没问题；角色、强度写错、主 Session 的角色没有降级链会报错，脚本类 Agent 配了模型会提醒；`instance` 写错先报、没写 name 提醒用的是默认名 |
 | `tests/app/test_runtime.py` | 整个应用，用假 Agent 和真实的脚本子进程：明确请求、`observe`、人批准的动作在 `observe` 下照常执行、规则直配、脚本工单及其事件、卡片与只批明细、需要批准的事件、订阅把复核结论送回写稿工单、轮数上限、暂停、停止、输出里的密钥落库前打码、摘要 |
 | `tests/app/test_http_cli.py` | 管理 API 的视图和动作、`/v1/*` 脚本契约、跨站拒绝、钉钉来源的回答 / 跟进 / 指令 / 请求 |
+| `tests/app/test_chatcheck.py` | doctor 的聊天几行：两个命令行都查、只有开着的缺了才算问题；没登录时群名换不了并提示登录；群名找不到或重名报出原因；没配群、home 指向别处；审批人为空时给出能直接抄的写法、不是 open_id 的不生效、本人不在名单里提醒；钉钉登录认 `dws auth status` 的字段 |
+| `tests/app/test_init_local.py` | `superops init` 生成的 `local.yaml`：默认飞书群「测试superops」、lark-cli 登录着就填群 ID 和本人 open_id、代理取包装脚本里的、配上仓库策略能过 `check`、`--reset-local` 先备份、钉钉要给群 |
+| `tests/app/test_instance.py` | 部署名：没写时的通用默认值、按 name 推导和单独覆盖、写错时报出是哪一项、数据目录环境变量优先、钥匙串服务名和补密钥命令、launchd 标签和重启判断、另一个配置目录生成的 plist（代码用本仓库，配置和数据用那套的）、积分计数器和面板总览；仓库的配置推出来正好是 Popto 原来的值 |
 | `tests/app/test_preflight.py` | 启动检查：只查启用的规则用得到的、缺口发到 home 渠道且一天一次、全部就绪不出声、登录检查失败照实报告、缓存与复查 |
-| `tests/app/test_lark.py` | 飞书：钉钉和飞书二选一、自动回复名字跟着开着的那个、字段整理、轮询运营群（从现在开始、系统发的跳过、我打的批红生效、名单外不执行、@兔管家 是新请求）、轮询单聊和 @我 交给自动回复、发消息记 ID、自动回复用引用回复 |
+| `tests/app/test_lark.py` | 飞书：钉钉和飞书二选一、自动回复名字跟着开着的那个、字段整理、轮询运营群（从现在开始、系统发的跳过、我打的批红生效、名单外不执行、@兔管家 是新请求）、轮询单聊和 @我 交给自动回复、发消息记 ID、自动回复用引用回复；群可以写群名（只查一次、记下给面板显示、换不出来的报出并一分钟后重试）；登录状态新旧两种 `auth status` 输出都认 |
 | `tests/app/test_chat.py` | 聊天渠道：叠加规则（选哪个只开哪个、home 跟过去）、配群加审批人再切换并重启、飞书没登录不能切、改正在用的钉钉群要重启、按群名设置、不是 launchd 起的不自己重启 |
 | `tests/app/test_skills.py` | Skill 页：列表（来源、规则、缺的 Skill）、改 SKILL.md 留历史并能恢复、校验、防覆盖、外部只读、名字不能带路径 |
 | `tests/app/test_autoreply.py` | 钉钉自动回复：默认关、打开后起草并引用回复、同一条只回一次、运营群不接、单聊按对方 ID 发、要本人拿主意的不回并转告、限流、接口和总览带开关；过滤群按群 ID / 按群名、只管群里的 @、关着时不去查、配置里的初始名单 |
@@ -329,7 +343,7 @@ flowchart TB
 | `tests/app/test_effects.py` | 副作用队列：合并、并发上限、退避、`Later`、取消、健康项、停机续跑 |
 | `tests/app/test_outbox.py` | 发件箱：幂等、撤回、顺序、来源关着、暂停、静默时段、每日卡片上限 |
 | `tests/app/test_pool.py` | Agent 池：降级链、输出校验与重试、熔断与半开、排除 / 暂停 / 忙、用量策略、运行记录；按 Agent × 角色取模型和强度、规则的模型不串给降级的 Agent、旧库补上模型和强度两列 |
-| `tests/executor/test_adapters.py` | 各 Agent 命令行怎么拼（含模型和强度原样传下去、Codex 的 max 不降档）、工具档位、错误归类、会话续接、无动作提前结束、output.json 不是报告时用最后一条消息、Codex 续接的命令和续不上时新开 |
+| `tests/executor/test_adapters.py` | 各 Agent 命令行怎么拼（含模型和强度原样传下去、Codex 的 max 不降档）、工具档位、错误归类、会话续接、无动作提前结束、output.json 不是报告时用最后一条消息、Codex 续接的命令和续不上时新开；装没装看命令本身（包装脚本在不在不影响、断掉的软链接不算、nvm 新版本在前、命令目录加进 PATH、没有 strict_bin 也能续接） |
 | `tests/biz/test_biz_host_contract.py` | 脚本和宿主之间的契约：环境变量、stdout 最后一行 JSON、`HubClient` 访问的接口 |
 | `tests/biz/test_biz_publish_timing.py` | 自动发布的发布时间判定（定时 / 立即 / 顺延 / 超期）、发布包字段带进发布器、横封面生成、非 H.264 视频转码 |
 | `tests/biz/test_biz_units.py` | 钉钉指令解析、合并闸门、卡片渲染、指标采集（含手动采集）、入库（含测试需求标记、MR ↔ 需求关联）、合并后的线上核实、发布执行器、创作者后台取数 |

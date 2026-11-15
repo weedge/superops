@@ -5,8 +5,10 @@ from datetime import datetime
 
 import yaml
 
-from superops.biz import config, scheduler, validate
-from superops.biz.timeutil import TZ, in_window, iso, parse_duration, window_end
+from superops.infra import config, validate
+from superops.biz import scheduler
+from superops.biz.context import CONTEXT_PROVIDERS
+from superops.infra.timeutil import TZ, in_window, iso, parse_duration, window_end
 
 from bizhelpers import at
 
@@ -104,11 +106,11 @@ def test_find_skill_prefers_repo_then_external_dirs(home, tmp_path):
     (ext / "SKILL.md").write_text("x")
     assert config.find_skill("my-skill", {"external_skill_dirs": [str(tmp_path / "ext-skills")]}, home) == ext
     assert config.find_skill("ops-nope", cfg, home) is None
-    assert config.CONTEXT_PROVIDERS >= {"hub_digest", "event_payload", "popto_help"} and "browser" in config.TOOLS
+    assert CONTEXT_PROVIDERS >= {"hub_digest", "event_payload", "popto_help"} and "browser" in config.TOOLS
     assert "always" in config.TELL and "xhigh" in config.EFFORT
 
 
 def test_every_context_provider_name_has_an_implementation():
     from superops.biz.context import ContextBuilder
 
-    assert {n[2:] for n in dir(ContextBuilder) if n.startswith("p_")} == config.CONTEXT_PROVIDERS
+    assert {n[2:] for n in dir(ContextBuilder) if n.startswith("p_")} == CONTEXT_PROVIDERS

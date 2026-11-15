@@ -7,11 +7,10 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 
-from . import config as cfgmod
+from ..infra import config as cfgmod
 from .client import HubClient
 
 
@@ -39,16 +38,3 @@ def emit_result(summary: str, *, status: str = "done", needs_decision: bool = Fa
     print(json.dumps(out, ensure_ascii=False, default=str))
     sys.stdout.flush()
     return out
-
-
-def keychain(name: str) -> str | None:
-    """密钥只放钥匙串：security add-generic-password -s popto-ops/<name> -a popto-ops -w <值>"""
-    env = os.environ.get(f"OPS_SECRET_{name.upper().replace('-', '_')}")  # 仅测试用
-    if env:
-        return env
-    try:
-        r = subprocess.run(["security", "find-generic-password", "-s", f"popto-ops/{name}", "-w"],
-                           capture_output=True, text=True, timeout=10)
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return None
-    return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else None

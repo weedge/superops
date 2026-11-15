@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from superops.biz import db, ingest
-from superops.biz.timeutil import iso
+from superops.infra.timeutil import iso
 from superops.biz.ci import gate
 from superops.biz.collectors import metrics
 from superops.biz.notifier.listener import handle_event, parse_command
@@ -116,7 +116,7 @@ def test_sync_terms(home):
 
 def test_dingtalk_message_id_and_failure(monkeypatch):
     import subprocess as sp
-    from superops.biz.notifier import DingTalkNotifier
+    from superops.infra.notifier import DingTalkNotifier
     n = DingTalkNotifier({"chat_id": "cid1"})
     out = {"stdout": '{"success": true, "result": {"data": {"openMsgId": "msgX"}}}'}
     monkeypatch.setattr(sp, "run", lambda *a, **k: sp.CompletedProcess(a, 0, out["stdout"], ""))
@@ -166,7 +166,7 @@ def test_gitlab_add_labels_compatible_with_11x():
 def test_dingtalk_retries_transient_dns_errors(monkeypatch):
     import subprocess as sp
     import time as _t
-    from superops.biz.notifier import DingTalkNotifier
+    from superops.infra.notifier import DingTalkNotifier
     calls = []
     outs = [(1, "", "dial tcp: lookup mcp-gw.dingtalk.com: i/o timeout"), (0, '{"success": true}', "")]
 
@@ -334,7 +334,7 @@ def test_publish_run_modes(home, monkeypatch, tmp_path):
         sent.clear()
         monkeypatch.setattr(publish, "load_task", lambda: {"task": {"id": "t"}, "events": [
             {"data": {"pack_id": pack_id}, "received_at": iso()}]})
-        monkeypatch.setattr("superops.biz.config.load_agents_config", lambda *a, **k: {"publishers": {"douyin": {"mode": mode}}})
+        monkeypatch.setattr("superops.infra.config.load_agents_config", lambda *a, **k: {"publishers": {"douyin": {"mode": mode}}})
 
         def fake_run(p, meta, *, dry_run, headless=True, draft=False):
             assert dry_run == (mode == "dry_run") and draft == (mode == "draft")
@@ -382,7 +382,7 @@ def test_publish_live_failure_falls_back_to_manual(home, monkeypatch, tmp_path):
     monkeypatch.setattr(publish, "emit_result", lambda *a, **k: None)
     monkeypatch.setattr(publish, "load_task", lambda: {"task": {"id": "t"}, "events": [
         {"data": {"pack_id": "pk_c_douyin"}, "received_at": iso()}]})
-    monkeypatch.setattr("superops.biz.config.load_agents_config", lambda *a, **k: {"publishers": {"douyin": {"mode": "live"}}})
+    monkeypatch.setattr("superops.infra.config.load_agents_config", lambda *a, **k: {"publishers": {"douyin": {"mode": "live"}}})
 
     def boom(*a, **k):
         raise pubs.NotLoggedIn("抖音登录已失效")
@@ -473,7 +473,7 @@ def test_creator_title_matching():
 
     from superops.biz.collectors import creator
     from superops.biz.executors.publishers.channels import short_title
-    from superops.biz.timeutil import parse_iso
+    from superops.infra.timeutil import parse_iso
     pub = parse_iso("2026-11-10T19:00:00+08:00")
     title = "保险人 3 分钟做完一条口播，客户追着问！"
 
@@ -521,7 +521,7 @@ def test_record_manual_without_link(home, tmp_path):
 
 def test_collect_reads_creator_backends_and_links_by_title(home, monkeypatch):
     from superops.biz.collectors import creator
-    from superops.biz.timeutil import parse_iso
+    from superops.infra.timeutil import parse_iso
     ops = db.open_ops()
     at("2026-11-10 20:30")
     ch = metrics.register_post(ops, {"platform": "wechat_channels", "post_id": "wechat_channels_pk_v", "platform_post_id": "",
@@ -575,7 +575,7 @@ def test_live_publish_without_post_id_still_registers(home, monkeypatch, tmp_pat
     monkeypatch.setattr(publish, "emit_result", lambda summary, **k: out.update(summary=summary, **k))
     monkeypatch.setattr(publish, "load_task", lambda: {"task": {"id": "t"}, "events": [
         {"data": {"pack_id": "pk_v_wechat_channels"}, "received_at": iso()}]})
-    monkeypatch.setattr("superops.biz.config.load_agents_config", lambda *a, **k: {"publishers": {"wechat_channels": {"mode": "live"}}})
+    monkeypatch.setattr("superops.infra.config.load_agents_config", lambda *a, **k: {"publishers": {"wechat_channels": {"mode": "live"}}})
     monkeypatch.setattr(pubs, "run", lambda *a, **k: pubs.PublishResult(ok=True, dry_run=False, notes=["已发表"]))
     publish.cmd_run()
     post = ops.execute("SELECT * FROM posts WHERE id='wechat_channels_pk_v_wechat_channels'").fetchone()
@@ -636,7 +636,7 @@ def test_needs_verification_then_retry_with_same_approval(home, monkeypatch, tmp
     monkeypatch.setattr(publish, "emit_result", lambda *a, **k: None)
     monkeypatch.setattr(publish, "load_task", lambda: {"task": {"id": "t"}, "events": [
         {"data": {"pack_id": "pk_v_douyin"}, "received_at": iso()}]})
-    monkeypatch.setattr("superops.biz.config.load_agents_config", lambda *a, **k: {"publishers": {"douyin": {"mode": "live"}}})
+    monkeypatch.setattr("superops.infra.config.load_agents_config", lambda *a, **k: {"publishers": {"douyin": {"mode": "live"}}})
     calls = []
 
     def verify(p, meta, *, dry_run, headless=True, draft=False):
@@ -675,7 +675,7 @@ def _no_tikhub(monkeypatch):
 
 def test_手动采集_全部采一遍_存手动快照_不动节点_跳过已删除和太老的(home, monkeypatch):
     from superops.biz.collectors import creator
-    from superops.biz.timeutil import parse_iso
+    from superops.infra.timeutil import parse_iso
     ops = db.open_ops()
     at("2026-11-12 11:00")
     live = metrics.register_post(ops, {"platform": "xiaohongshu", "platform_post_id": "6af44270000000002a00e1b9", "title": "讲解片",
@@ -860,7 +860,7 @@ def test_image_posts_go_to_the_xhs_publisher_and_to_manual_elsewhere(home, monke
     monkeypatch.setattr(publish, "emit_result", lambda *a, **k: None)
     monkeypatch.setattr(publish, "load_task", lambda: {"task": {"id": "t"}, "events": [
         {"data": {"pack_id": "pk_c_xiaohongshu"}, "received_at": iso()}, {"data": {"pack_id": "pk_c_douyin"}, "received_at": iso()}]})
-    monkeypatch.setattr("superops.biz.config.load_agents_config", lambda *a, **k: {"publishers": {"xiaohongshu": {"mode": "draft"}, "douyin": {"mode": "draft"}}})
+    monkeypatch.setattr("superops.infra.config.load_agents_config", lambda *a, **k: {"publishers": {"xiaohongshu": {"mode": "draft"}, "douyin": {"mode": "draft"}}})
 
     def fake_run(p, meta, **kw):
         ran.append((p["platform"], [Path(x).name for x in pubs.payload_for(p, meta)["images"]], kw.get("draft")))

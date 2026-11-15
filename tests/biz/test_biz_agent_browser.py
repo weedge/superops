@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from superops.biz import agent_browser as ab
-from superops.biz import config as cfgmod
+from superops.infra import config as cfgmod
 
 
 S = {"cli": ["playwright-cli"], "session": "ops-agent", "profile": Path("/data/agent-browse"), "headed": False, "enabled": True}
@@ -63,7 +63,7 @@ def test_main_refuses_blocked_command_without_running_anything(home, capsys):
 
 
 def test_geo_schema_separates_not_collected_from_not_mentioned(home):
-    from superops.biz.validate import build_schema, validate
+    from superops.infra.validate import build_schema, validate
 
     schema = build_schema(home / "skills" / "ops-geo-check")
     base = {"status": "done", "summary": "采集 1/2，提到 0", "needs_decision": False, "coverage": {"planned": 2, "collected": 1}}

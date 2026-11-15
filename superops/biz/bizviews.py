@@ -10,9 +10,10 @@ import re
 from datetime import timedelta
 from pathlib import Path
 
-from . import db, paths
-from .config import load_agents_config
-from .timeutil import iso, now, today_start
+from . import db
+from ..infra import paths
+from ..infra.config import load_agents_config
+from ..infra.timeutil import iso, now, today_start
 
 FUNNEL_COLS = ("clicks", "registrations", "first_done", "second_done", "paid")
 

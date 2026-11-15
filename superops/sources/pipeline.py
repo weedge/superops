@@ -13,8 +13,8 @@ from __future__ import annotations
 import uuid
 from datetime import timedelta
 
-from ..biz import governance
-from ..biz.timeutil import parse_duration
+from ..infra import governance
+from ..infra.timeutil import parse_duration
 from ..core.model import now_iso, shift
 from ..core.reasons import key
 from ..app.settings import matching_rules

@@ -34,9 +34,10 @@ from pathlib import Path
 from urllib.parse import parse_qs
 
 from .. import db
-from ..config import load_agents_config
+from ...infra.config import load_agents_config
+from ...infra.secrets import service_for
 from ..scriptkit import emit_result, hub_client
-from ..timeutil import TZ, iso, now
+from ...infra.timeutil import TZ, iso, now
 from .tikhub import BASE, UA, TikHub
 
 PLATFORMS = ("douyin", "xiaohongshu", "wechat_channels", "kuaishou")
@@ -328,7 +329,7 @@ def cmd_collect() -> None:
     terms = [dict(r) for r in ops.execute("SELECT term, industry FROM listening_terms WHERE active=1 AND removed_at IS NULL ORDER BY term")]
     th = TikHub(proxy=None)
     if not th.configured:
-        emit_result("没配 TikHub Key（钥匙串 popto-ops/tikhub），接口监听跳过", status="failed")
+        emit_result(f"没配 TikHub Key（钥匙串 {service_for('tikhub')}），接口监听跳过", status="failed")
         return
     if not terms:
         emit_result("没有在用的监听意图词（面板“业务 → 获客”添加），跳过")

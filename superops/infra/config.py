@@ -12,14 +12,11 @@ import yaml
 
 from . import paths
 
-# 取值范围（宿主校验策略 / 工单参数时用）：通知方式、工具档位、思考强度、ContextBuilder 认得的上下文提供者
+# 取值范围（宿主校验策略 / 工单参数时用）：通知方式、工具档位、思考强度。
+# 上下文提供者是业务的，名单在 superops.biz.context.CONTEXT_PROVIDERS
 TELL = {"never", "needed", "always", "digest"}
 TOOLS = {"readonly", "workspace", "browser", "dev"}
 EFFORT = {"low", "medium", "high", "xhigh", "max"}
-CONTEXT_PROVIDERS = {
-    "hub_digest", "hub_digest_week", "ops_metrics", "unread_feedback", "demands", "event_payload",
-    "event_media", "listening_terms", "budget_popto_credits", "mr_diff", "event_scripts", "popto_help", "content_calendar", "social_accounts", "popto_help_images", "publish_queue",
-}
 
 
 def deep_merge(base: dict, over: dict) -> dict:

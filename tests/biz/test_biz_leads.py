@@ -116,7 +116,7 @@ def test_listener_lets_limited_approver_decide_but_nothing_else():
 
 
 def test_dingtalk_cmd_uses_target_group_and_listener_watches_all_groups():
-    from superops.biz.notifier import DingTalkNotifier
+    from superops.infra.notifier import DingTalkNotifier
     from superops.biz.notifier.listener import listen_chats
 
     n = DingTalkNotifier({"chat_id": "cidMAIN"})
@@ -574,7 +574,7 @@ def test_竞品调研_立即发起_采账号和作品_不拉评论(home, monkeyp
 
 
 def test_竞品评审卡片_宿主补齐来源作品(home, data_dir):
-    from superops.biz import paths
+    from superops.infra import paths
     work = paths.ops_data() / "work" / "t123-competitor-review"
     work.mkdir(parents=True)
     q1 = {"text": "定制的数字人能免费预览吗", "platform": "xiaohongshu", "competitor": "蝉镜数字人", "author": "某博主",

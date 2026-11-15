@@ -32,7 +32,7 @@ def test_数据采集按账号分开开浏览器_没记账号的算主号(home, 
 def test_多个号时_待发布卡片写明账号_人工登记记下是哪个号发的(home, tmp_path, monkeypatch):
     from superops.biz import db
     from superops.biz.executors import publish, publishers as pubs
-    monkeypatch.setattr("superops.biz.config.load_agents_config", lambda *a, **k: {"publishers": {"douyin": {"mode": "draft"}}})
+    monkeypatch.setattr("superops.infra.config.load_agents_config", lambda *a, **k: {"publishers": {"douyin": {"mode": "draft"}}})
     ops = db.open_ops()
     for pid, acct in (("pk_a_douyin", None), ("pk_b_douyin", "douyin@2"), ("pk_c_douyin", "不存在的号")):
         ops.execute("INSERT INTO publish_packs(id,content_id,platform,account,title,pack_dir,publish_mode,status) VALUES (?,?,?,?,?,?,?,?)",
@@ -54,7 +54,7 @@ def test_多个号时_待发布卡片写明账号_人工登记记下是哪个号
 def test_只有一个号时_卡片不多写账号(home, tmp_path, monkeypatch):
     from superops.biz import db
     from superops.biz.executors import publish
-    monkeypatch.setattr("superops.biz.config.load_agents_config", lambda *a, **k: {"publishers": {}})
+    monkeypatch.setattr("superops.infra.config.load_agents_config", lambda *a, **k: {"publishers": {}})
     ops = db.open_ops()
     ops.execute("INSERT INTO publish_packs(id,content_id,platform,title,pack_dir,publish_mode,status) VALUES (?,?,?,?,?,?,?)",
                 ("pk_a_douyin", "a", "douyin", "标题", str(tmp_path), "semi_auto", "ready"))

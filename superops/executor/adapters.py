@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -14,8 +15,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable
 
-from ..biz import paths
-from ..biz.validate import extract_json, for_agent
+from ..infra import paths
+from ..infra.validate import extract_json, for_agent
 
 # Claude 工具白名单（按档位）
 _RO = ["Read", "Glob", "Grep"]
@@ -168,6 +169,76 @@ def _bin(cfg: dict) -> str:
     return str(Path(os.path.expanduser(cfg["bin"])))
 
 
+# ---- 找命令：本机装没装、该调哪个文件，看命令本身（claude / codex / agy），不看包装脚本在不在
+
+COMMANDS = {"claude": ("claude",), "codex": ("codex",), "antigravity": ("agy", "antigravity")}
+COMMON_DIRS = ("~/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "~/.npm-global/bin", "~/.bun/bin",
+               "~/.antigravity/antigravity/bin")
+
+
+def _is_exe(p: str | None) -> bool:
+    if not p:
+        return False
+    q = Path(os.path.expanduser(p))
+    return q.is_file() and os.access(q, os.X_OK)
+
+
+def _version_key(p: Path) -> tuple[int, ...]:
+    return tuple(int(x) for x in re.findall(r"\d+", p.parent.name))
+
+
+def command_dirs(search_path: str = "") -> list[str]:
+    """找命令的目录，按先后：agents.yaml 的 path、宿主进程的 PATH、常见安装目录、nvm 各版本（新的在前）。
+    launchd 拉起的宿主 PATH 很短，nvm / 安装器装的命令全靠后两类找到。"""
+    nvm = sorted(Path("~/.nvm/versions/node").expanduser().glob("*/bin"), key=_version_key, reverse=True)
+    out: list[str] = []
+    for d in [*search_path.split(os.pathsep), *os.environ.get("PATH", "").split(os.pathsep), *COMMON_DIRS, *map(str, nvm)]:
+        d = os.path.expanduser(d) if d else ""
+        if d and d not in out:
+            out.append(d)
+    return out
+
+
+def find_command(cfg: dict, search_path: str = "") -> str | None:
+    """Agent 的命令本体在哪：agents.yaml 里 agents.<名>.command（命令名、命令名列表或路径）优先，
+    没写就按类型（claude → claude，codex → codex，antigravity → agy / antigravity）。找不到返回 None。"""
+    names = cfg.get("command") or COMMANDS.get(cfg.get("type", ""), ())
+    dirs = None
+    for name in [names] if isinstance(names, str) else names:
+        if os.sep in name or name.startswith("~"):
+            if _is_exe(name):
+                return os.path.expanduser(name)
+            continue
+        dirs = dirs if dirs is not None else os.pathsep.join(command_dirs(search_path))
+        found = shutil.which(name, path=dirs)
+        if found:
+            return found
+    return None
+
+
+def direct_bin(cfg: dict, search_path: str = "") -> str | None:
+    """不经包装脚本的命令本体：strict_bin 在就用它，否则按命令名找。"""
+    return os.path.expanduser(cfg["strict_bin"]) if _is_exe(cfg.get("strict_bin")) else find_command(cfg, search_path)
+
+
+def uses_wrapper(cfg: dict) -> bool:
+    """bin 配的包装脚本（~/codex.sh 这类，自己设代理和权限参数）在本机存在。"""
+    b = cfg.get("bin")
+    return bool(b) and Path(os.path.expanduser(b)).is_file()
+
+
+def with_command_dir(env: dict, cmd: str | None) -> dict:
+    """命令所在目录放到 PATH 最前：nvm 装的 claude / codex 是 `#!/usr/bin/env node` 脚本，node 就在同一目录；
+    包装脚本里 `exec codex` 也靠它找到命令。"""
+    if not cmd:
+        return env
+    d = str(Path(cmd).parent)
+    parts = env.get("PATH", "").split(os.pathsep)
+    if d in parts:
+        return env
+    return {**env, "PATH": os.pathsep.join([d, *[p for p in parts if p]])}
+
+
 _PROXY_RE = re.compile(r'^\s*(?:export\s+)?PROXY=["\']?(https?://[^"\'\s]+)', re.M)
 
 
@@ -200,18 +271,26 @@ class Adapter:
         return bool(c.get("strict_bin")) and spec.tools in (c.get("strict_tiers") or [])
 
     def resolve_bin(self, spec: RunSpec) -> str:
-        c = spec.agent_cfg
-        return os.path.expanduser(c["strict_bin"]) if self.strict(spec) else _bin(c)
+        """这一轮调哪个文件：要直调的档位用命令本体；否则包装脚本在就用包装脚本，不在就直接调命令。
+        都找不到时退回配置里写的路径（池子按 available() 判为没装，正常不会走到这里）。"""
+        c, sp = spec.agent_cfg, spec.env.get("PATH", "")
+        if self.strict(spec):
+            return direct_bin(c, sp) or os.path.expanduser(c["strict_bin"])
+        if uses_wrapper(c):
+            return _bin(c)
+        return find_command(c, sp) or (_bin(c) if c.get("bin") else (COMMANDS.get(c.get("type", "")) or ("?",))[0])
 
     def resolve_env(self, spec: RunSpec) -> dict:
-        if not self.strict(spec):
-            return spec.env  # 包装脚本自己设代理
         c = spec.agent_cfg
-        return with_proxy(spec.env, c.get("proxy") or wrapper_proxy(c.get("bin", "")))
+        env = spec.env
+        if self.strict(spec) or not uses_wrapper(c):   # 包装脚本自己设代理；直调命令时代理从配置或包装脚本里读出来自己设
+            env = with_proxy(env, c.get("proxy") or wrapper_proxy(c.get("bin", "")))
+        return with_command_dir(env, find_command(c, env.get("PATH", "")) or direct_bin(c, env.get("PATH", "")))
 
-    def available(self, cfg: dict) -> bool:
+    def available(self, cfg: dict, search_path: str = "") -> bool:
+        """本机装没装：命令本体找得到就算装了（包装脚本在不在不影响）；bin 直接指向命令本体（不是 .sh）且存在也算。"""
         b = cfg.get("bin")
-        return bool(b) and Path(os.path.expanduser(b)).exists()
+        return bool(direct_bin(cfg, search_path) or (_is_exe(b) and not str(b).endswith(".sh")))
 
 
 class ClaudeAdapter(Adapter):
@@ -265,12 +344,13 @@ class CodexAdapter(Adapter):
     @staticmethod
     def resuming(spec: RunSpec) -> bool:
         c = spec.agent_cfg
-        return bool(spec.session and c.get("resume") and c.get("strict_bin"))
+        return bool(spec.session and c.get("resume") and (c.get("strict_bin") or direct_bin(c, spec.env.get("PATH", ""))))
 
     def resolve_env(self, spec: RunSpec) -> dict:
         if self.resuming(spec):
             c = spec.agent_cfg
-            return with_proxy({**spec.env, "BROWSER": "/bin/false"}, c.get("proxy") or wrapper_proxy(c.get("bin", "")))
+            env = with_proxy({**spec.env, "BROWSER": "/bin/false"}, c.get("proxy") or wrapper_proxy(c.get("bin", "")))
+            return with_command_dir(env, direct_bin(c, env.get("PATH", "")))
         return super().resolve_env(spec)
 
     def build_cmd(self, spec: RunSpec, last_msg: Path) -> list[str]:
@@ -278,7 +358,7 @@ class CodexAdapter(Adapter):
         sandbox = "read-only" if spec.tools == "readonly" else "workspace-write"
         dirs = [] if sandbox == "read-only" else [str(spec.run_dir), *[str(d) for d in spec.extra_dirs]]
         if self.resuming(spec):
-            cmd = [os.path.expanduser(c["strict_bin"]), "-a", "never", "-s", sandbox, "-C", str(spec.cwd)]
+            cmd = [direct_bin(c, spec.env.get("PATH", "")) or os.path.expanduser(c["strict_bin"]), "-a", "never", "-s", sandbox, "-C", str(spec.cwd)]
             for d in dirs:
                 cmd += ["--add-dir", d]
             cmd += ["exec", "resume", spec.session, "--skip-git-repo-check", "--json", "-o", str(last_msg)]
@@ -411,7 +491,7 @@ class AntigravityAdapter(Adapter):
 class InboxAdapter(Adapter):
     """WorkBuddy：写收件箱，等发件箱（只承接不紧急的任务）。"""
 
-    def available(self, cfg):
+    def available(self, cfg, search_path=""):
         return True
 
     def run(self, spec, log_path):
@@ -440,7 +520,7 @@ class InboxAdapter(Adapter):
 class ScriptAdapter(Adapter):
     """确定性脚本：stdout 最后一个 JSON 对象就是 output（同样要符合公共 Schema）。"""
 
-    def available(self, cfg):
+    def available(self, cfg, search_path=""):
         return True
 
     def run(self, spec, log_path):
@@ -468,7 +548,7 @@ class ScriptAdapter(Adapter):
 class CommandAdapter(ScriptAdapter):
     """测试 / 自定义 Agent：bin + args，提示词从 stdin 进。"""
 
-    def available(self, cfg):
+    def available(self, cfg, search_path=""):
         return True
 
     def run(self, spec, log_path):

@@ -7,8 +7,8 @@
     kind    检查什么                                   怎么补
     login   创作者后台登录态（抖音 / 视频号 / 小红书）    superops publish login <平台>
     login   Agent 专用浏览器登录态（监听、GEO）          superops browse login
-    key     钥匙串密钥（TikHub、GitLab）                security add-generic-password -s popto-ops/<名> -a popto-ops -w
-    tool    本机命令（Agent CLI、dws、ffmpeg）           安装或登录对应的命令行
+    key     钥匙串密钥（TikHub、GitLab）                security add-generic-password -s <instance.keychain_service>/<名> …
+    tool    本机命令（Agent CLI、dws / lark-cli 及其登录）  安装或登录对应的命令行
     tool    Agent 专用浏览器的命令行装在本机（不靠 npx）    superops browse install
 
 只检查“有规则用得到”的：对应规则都停用了，或平台的发布模式是 off、没配 CI 项目，就不查也不提醒。
@@ -17,11 +17,12 @@ from __future__ import annotations
 
 import logging
 import os
-import shutil
 from pathlib import Path
 
 from ..biz import agent_browser
-from ..biz.scriptkit import keychain
+from ..executor.adapters import COMMANDS, adapter_for, direct_bin
+from . import chatcheck
+from ..infra.secrets import add_command, keychain
 from ..core.model import now_iso
 from ..core.reasons import key
 
@@ -55,7 +56,7 @@ def static_checks(cfg: dict, settings: dict) -> list[dict]:
         ok = bool(keychain(name))
         items.append({"id": f"key:{name}", "kind": "key", "title": KEY_TITLES[name], "ok": ok, "rules": used,
                       "detail": "钥匙串里已有" if ok else "钥匙串里没有",
-                      "fix": f"security add-generic-password -s popto-ops/{name} -a popto-ops -w <密钥>"})
+                      "fix": f"{add_command(name)} <密钥>"})
     used = _used_by(settings, BROWSER_RULES)
     browser = agent_browser.settings(cfg)
     if used and browser["enabled"]:
@@ -69,25 +70,26 @@ def static_checks(cfg: dict, settings: dict) -> list[dict]:
                       "detail": browser["cli"][0] if local else "没装在本机，要靠 npx 现拉：Agent 的沙箱里写不了 npm 缓存，会开不起浏览器",
                       "fix": "superops browse install --proxy <npm 代理>"})
     roles = {r["run"].get("agent") for r in settings["policy"]["rules"] if r["enabled"] and r["run"].get("executor") == "agent"}
+    search = os.pathsep.join(os.path.expanduser(p) for p in str(cfg.get("path", "")).split(":") if p)
     for name, agent in (cfg.get("agents") or {}).items():
-        binary = agent.get("bin")
-        if not binary or name not in roles:
+        if agent.get("type") not in COMMANDS or name not in roles:
             continue
-        ok = Path(os.path.expanduser(binary)).exists()
+        ok = adapter_for(agent).available(agent, search)           # 装没装看命令本身，和执行池一致
+        found = direct_bin(agent, search)
+        wanted = agent.get("command") or COMMANDS[agent["type"]]
+        wanted = wanted if isinstance(wanted, str) else " / ".join(wanted)
         used = [r["name"] for r in settings["policy"]["rules"] if r["enabled"] and r["run"].get("agent") == name]
         items.append({"id": f"tool:{name}", "kind": "tool", "title": f"Agent {name}", "ok": ok, "rules": used[:6],
-                      "detail": binary if ok else f"找不到 {binary}", "fix": f"安装并登录 {name} 的命令行，确认 {binary} 可执行"})
-    if (settings["sources"].get("dingtalk") or {}).get("enabled"):
-        ok = bool(shutil.which("dws"))
-        items.append({"id": "tool:dws", "kind": "tool", "title": "钉钉命令行 dws", "ok": ok, "rules": ["钉钉来源（收消息、发卡片）"],
-                      "detail": shutil.which("dws") or "PATH 里没有 dws", "fix": "安装 dws 并登录（dws auth login）"})
-    if (settings["sources"].get("lark") or {}).get("enabled"):
-        from ..biz.notifier import lark
-        status = lark.auth_status() if shutil.which("lark-cli") else {"ok": False, "detail": "PATH 里没有 lark-cli"}
-        items.append({"id": "tool:lark-cli", "kind": "tool", "title": "飞书命令行 lark-cli（本人身份）", "ok": bool(status.get("ok")),
-                      "rules": ["飞书来源（收消息、发卡片、自动回复）"],
+                      "detail": found or f"找不到命令 {wanted}", "fix": f"安装并登录 {name} 的命令行（{wanted}）"})
+    for app, rules in (("dingtalk", ["钉钉来源（收消息、发卡片）"]), ("lark", ["飞书来源（收消息、发卡片、自动回复）"])):
+        if not (settings["sources"].get(app) or {}).get("enabled"):
+            continue
+        status = chatcheck.login_status(app)
+        cli = chatcheck.CLI[app]
+        items.append({"id": f"tool:{cli}", "kind": "tool", "title": f"{chatcheck.TITLES[app]}命令行 {cli}（本人身份）",
+                      "ok": bool(status.get("ok")), "rules": rules,
                       "detail": f"{status.get('user') or ''} {status.get('detail') or ''}".strip(),
-                      "fix": "lark-cli auth login（用户登录 7 天要续一次）"})
+                      "fix": chatcheck.LOGIN_FIX[app] if status.get("installed") else chatcheck.INSTALL_FIX[app]})
     return items
 
 

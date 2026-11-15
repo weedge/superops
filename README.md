@@ -8,7 +8,7 @@ superops 是 Popto 产品运营研发多 Agent 系统（本机运行）：定时
 
 ## 和旧 ops 的关系
 
-同级目录的 `ops/`（包 `popto_ops`）是上一版：事件中台 hub + 接单程序 opsd + `rules.json` 静态路由 + 一次性任务。superops 把同一套业务按新架构重做，业务模块（采集器、发布 / 回复 / 线索 / 清理执行器、CI、专用浏览器、打码、数据保留）原样带到 `superops/biz/`。两套的端口和数据目录不同，可以同时跑，也可以同听一个钉钉群（旧 ops 只认 `C12`，superops 只认 `T12`）；但对外动作只能有一套在做，切换步骤见 [docs/006-deployment.md](docs/006-deployment.md)。
+同级目录的 `ops/`（包 `popto_ops`）是上一版：事件中台 hub + 接单程序 opsd + `rules.json` 静态路由 + 一次性任务。superops 把同一套业务按新架构重做，业务模块（采集器、发布 / 回复 / 线索 / 清理执行器、CI、专用浏览器、打码、数据保留）原样带到 `superops/biz/`，其中和业务无关的部分（路径、时间、配置加载、打码、决策档案、钥匙串、通知渠道）后来移到了 `superops/infra/`。两套的端口和数据目录不同，可以同时跑，也可以同听一个钉钉群（旧 ops 只认 `C12`，superops 只认 `T12`）；但对外动作只能有一套在做，切换步骤见 [docs/006-deployment.md](docs/006-deployment.md)。
 
 | 旧 ops | superops | 变了什么 |
 | --- | --- | --- |
@@ -40,7 +40,7 @@ superops 是 Popto 产品运营研发多 Agent 系统（本机运行）：定时
 | 路径 | 内容 |
 | --- | --- |
 | `policy.yaml` | 策略：接单模式、执行器默认值、home 渠道、各来源的开关 / 名单 / 准入表，以及 47 条规则 |
-| `agents.yaml` | 机器层面的设置：管理 API 地址、Agent 启动方式和并发、降级链、熔断、预算、静默时段、数据保留期、自动发布模式 |
+| `agents.yaml` | 这套部署叫什么（`instance`：推出数据目录、钥匙串服务名、launchd 标签、积分计数器）和机器层面的设置：管理 API 地址、Agent 启动方式和并发、降级链、熔断、预算、静默时段、数据保留期、自动发布模式 |
 | `schedules.yaml` | 定时来源的时间表（13 项） |
 | `decisions.md` / `not-doing.md` | 定的事 / 定了不做的事（只追加） |
 | `prompts/` | 内置提示词（`*.md`）、团队段落（`team/*.md`）、钉钉自动回复的规矩（`auto-reply.md`） |
@@ -51,20 +51,21 @@ superops 是 Popto 产品运营研发多 Agent 系统（本机运行）：定时
 | `superops/app/` | 应用层：SQLite、副作用队列、发件箱、设置与策略、研判、组合根、提示词、管理 API |
 | `superops/sources/` | 来源：定时、流水线事件、终端、钉钉（含单聊和 @我 的监听，交给自动回复） |
 | `superops/executor/` | 执行器：Agent 池（降级、熔断、输出校验）、工单的一轮怎么跑、各 Agent 的调用方式 |
-| `superops/biz/` | 业务模块：采集器、执行器、CI、专用浏览器、打码、数据保留、`ops.db`、入库 |
+| `superops/infra/` | 通用基础设施：路径与部署名（`instance`）、时间、配置加载、输出校验、打码、决策档案、钥匙串、钉钉 / 飞书发送渠道；不依赖 `biz/` |
+| `superops/biz/` | Popto 的业务模块：采集器、执行器、CI、专用浏览器、上下文提供者、数据保留、`ops.db`、入库、钉钉群指令解析 |
 | `superops/panel/index.html` | 面板（单页，和管理 API 同址） |
 | `superops/cli.py` | `superops` 的全部子命令 |
-| `docs/` | 编号文档 000–008 和 [整体流程](docs/整体流程.md) |
+| `docs/` | 编号文档 000–010、[整体流程](docs/整体流程.md) 和 [整体设计](docs/整体设计.md) |
 | `tests/` | `uv run pytest -q` |
 
-数据目录 `~/popto-superops-data/`（不进 git，700 权限）：`superops.sqlite`（触发、线程、决定、工单、消息、运行记录）、`ops.db`（业务数据）、`local.yaml`（本机配置）、`auto-reply-context.md`（钉钉自动回复用的个人近况，自己改）、`work/<工单短名>/`（Agent 工单的目录：每轮的提示词、日志、`context/`、产出）、`runs/<工单短名>/`（脚本工单的 `task.json` 和日志）、`notify/console.log`（本机收件箱）、`logs/`、`browser-profiles/`。
+数据目录 `~/popto-superops-data/`（不进 git，700 权限；路径由 `agents.yaml` 的 `instance.name: popto` 推出，环境变量 `SUPEROPS_DATA` 优先）：`superops.sqlite`（触发、线程、决定、工单、消息、运行记录）、`ops.db`（业务数据）、`local.yaml`（本机配置）、`auto-reply-context.md`（钉钉自动回复用的个人近况，自己改）、`work/<工单短名>/`（Agent 工单的目录：每轮的提示词、日志、`context/`、产出）、`runs/<工单短名>/`（脚本工单的 `task.json` 和日志）、`notify/console.log`（本机收件箱）、`logs/`、`browser-profiles/`。
 
 ## 上手
 
 ```bash
 uv sync                      # 装依赖需要代理时先 export https_proxy=… http_proxy=…
-uv run superops init         # 建数据目录和两个库，生成 ~/popto-superops-data/local.yaml
-uv run superops doctor       # 检查 Agent CLI、dws、ffmpeg、钥匙串、策略、宿主是否在跑
+uv run superops init         # 建数据目录和两个库，生成 ~/popto-superops-data/local.yaml（默认用飞书群「测试superops」）
+uv run superops doctor       # 检查 Agent CLI、飞书 / 钉钉命令行和登录、群、审批人、ffmpeg、钥匙串、策略、宿主是否在跑
 uv run pytest -q
 uv run superops run          # 前台启动：来源、评估、执行器、发件箱、管理 API 和面板（127.0.0.1:8797）
 ```
@@ -87,7 +88,7 @@ uv run superops inbox
 
 ### 正式启用前要配的
 
-1. **钉钉**：在 `local.yaml` 里打开钉钉来源、填运营群，并把 home 渠道指到这个群（`superops init` 生成的模板里有注释好的样子）：
+1. **聊天软件**：`superops init` 生成的 `local.yaml` 默认用飞书（群「测试superops」，可以写群名，宿主自己换成群 ID），装好 `lark-cli` 并 `lark-cli auth login` 后，把 `lark-cli auth status` 里你的 `userOpenId` 填进 `policy.sources.lark.allowed`；细节见 [006 的“飞书”](docs/006-deployment.md)。改用钉钉时打开钉钉来源、填运营群，并把 home 渠道指到这个群（模板注释里有这段）：
 
    ```yaml
    home: {source: dingtalk, thread: home, address: {chat: "<运营群 openConversationId>"}}
@@ -120,7 +121,7 @@ uv run superops inbox
 | Agent 专用浏览器登录 | 社媒监听的浏览器补位（知乎、B站、搜狗微信）、GEO 检查 | `superops browse install`，再 `superops browse login`（建议用专门的小号） | `~/popto-superops-data/browser-profiles/agent-browse/` |
 | TikHub 密钥 | 社媒监听（接口：搜作品、按人群词找人、补粉丝数）；评论采集；抖音指标读不到后台时的兜底 | `security add-generic-password -s popto-ops/tikhub -a popto-ops -w <key>` | 钥匙串 |
 | GitLab 令牌（机器人账号，api 权限） | 接入了仓库（`ci.projects` 非空）时的 CI 轮询、MR 审查与写回、合并闸门、合并、开发工单的推送和开 MR | `security add-generic-password -s popto-ops/gitlab -a popto-ops -w <token>` | 钥匙串 |
-| Agent 命令行已登录（Claude / Codex / Antigravity） | 所有 Agent 执行的规则 | 各自的命令行登录一次；`superops doctor` 看包装脚本在不在 | 各 CLI 自己的目录 |
+| Agent 命令行已登录（Claude / Codex / Antigravity） | 所有 Agent 执行的规则 | 各自的命令行登录一次；`superops doctor` 看找到的命令在哪（装没装看命令本身，包装脚本可有可无） | 各 CLI 自己的目录 |
 | `dws` 已登录 | 钉钉来源（收群消息、发卡片） | `dws auth login` | dws 自己的配置 |
 
 登录态和密钥都**不跟着数据目录以外的东西走**：新建数据目录（包括从旧 ops 切过来）后，三个创作者后台和专用浏览器都要重新登录一次；钥匙串的服务名沿用 `popto-ops/<名>`，旧 ops 配过的不用重配。扫码登录只能由人来做，Agent 不会去登录任何站点。
@@ -212,7 +213,7 @@ superops preflight --refresh  # 重新查一遍（补完之后用它复查）
 - [005 面板](docs/005-panel.md)
 - [006 部署与运维](docs/006-deployment.md)
 - [007 架构](docs/007-architecture.md)
-- [008 扩展手册](docs/008-cookbook.md)：加规则、加来源、加 Skill、加上下文提供者
+- [008 扩展手册](docs/008-cookbook.md)：加规则、加来源、加 Skill、加上下文提供者，以及新起一套部署（用到 Popto 以外的业务）
 - [009 会话](docs/009-sessions.md)：Agent 会话怎么续接（Claude、Codex）、主 Session、钉钉会话、和线程的区别
 - [010 使用示例](docs/010-examples.md)：系统跑起来以后按场景怎么用：群里怎么说、面板点哪里、终端敲什么（提请求、批卡片、选题写稿、发布、数据回收、评论、需求与开发、获客、竞品、自动回复、排查）
 - [整体设计](docs/整体设计.md)：一页纸的全景：设计原则、分层与模块、交互流程（面板“设计”页展示的就是这篇）
