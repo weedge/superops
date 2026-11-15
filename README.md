@@ -1,8 +1,10 @@
 # superops · 本地多 Agent 系统
 
-superops 是 Popto 产品运营研发多 Agent 系统（本机运行）：定时、业务事件和钉钉群里的话进来，系统判断该不该开工，开工的事在一张工单里由本机的 Claude / Codex / Antigravity（或确定性脚本）做完，只有要人拍板的事才变成一张带选项的问题卡片发给人。它是 Python 包 `superops`，一个进程独立运行，不依赖别的宿主。
+superops 是 Popto 产品运营研发多 Agent 系统（本机运行）：定时、业务事件和飞书 / 钉钉群里的话进来，系统判断该不该开工，开工的事在一张工单里由本机的 Claude / Codex / Antigravity（或确定性脚本）做完，只有要人拍板的事才变成一张带选项的问题卡片发给人。它是 Python 包 `superops`，一个进程独立运行，不依赖别的宿主。
 
 它按一条原则设计：**尽量少占人的注意力，尽量多给价值。** 放到运营场景里就是：采集、日报、写稿、复核、发布包这些事自己往下走，不在群里汇报进展；发布、回复评论、合并代码、删东西这些对外动作，Agent 只能写成卡片上的选项，人在群里回一行 `T12 1` 才会执行；没人直接要的事，只有团队在 `policy.yaml` 里写了规则才做，而且新装的系统默认只记录“本来会接单”，不动手。[docs/000-philosophy.md](docs/000-philosophy.md) 讲这条原则和它对操作者的要求。
+
+引擎和业务是分开的：`superops/core/`、`app/`、`executor/`、`sources/`、`infra/` 不带业务，Popto 的业务在 `superops/biz/` 和配置目录（策略、Skill、提示词）里；部署名（`agents.yaml` 的 `instance`）决定数据目录、钥匙串服务名和 launchd 标签。要用到别的业务，按 [008 扩展手册](docs/008-cookbook.md) 的“新起一套部署”另起一个配置目录即可，代码不用复制。
 
 架构和领域模型来自 DeepSeek 团队的研究原型 dsh-superagent（MIT 许可，一个跑在 DeepSeek Harness 里、面向 GitHub 仓库的编码 Agent）。`superops/core/` 是它 `src/core` 的逐行移植；来源、策略、执行器和业务模块是本项目的。与原型的差异见 [docs/007-architecture.md](docs/007-architecture.md) 末尾。
 
@@ -39,33 +41,33 @@ superops 是 Popto 产品运营研发多 Agent 系统（本机运行）：定时
 
 | 路径 | 内容 |
 | --- | --- |
-| `policy.yaml` | 策略：接单模式、执行器默认值、home 渠道、各来源的开关 / 名单 / 准入表，以及 47 条规则 |
+| `policy.yaml` | 策略：接单模式、执行器默认值、home 渠道、各来源的开关 / 名单 / 准入表，以及 58 条规则 |
 | `agents.yaml` | 这套部署叫什么（`instance`：推出数据目录、钥匙串服务名、launchd 标签、积分计数器）和机器层面的设置：管理 API 地址、Agent 启动方式和并发、降级链、熔断、预算、静默时段、数据保留期、自动发布模式 |
-| `schedules.yaml` | 定时来源的时间表（13 项） |
+| `schedules.yaml` | 定时来源的时间表（16 项） |
 | `decisions.md` / `not-doing.md` | 定的事 / 定了不做的事（只追加） |
-| `prompts/` | 内置提示词（`*.md`）、团队段落（`team/*.md`）、钉钉自动回复的规矩（`auto-reply.md`） |
-| `skills/ops-*/` | 15 个流水线 Skill：`SKILL.md` + `schema.json` |
+| `prompts/` | 内置提示词（`*.md`）、团队段落（`team/*.md`）、自动回复的规矩（`auto-reply.md`） |
+| `skills/ops-*/` | 20 个流水线 Skill：`SKILL.md` + `schema.json` |
 | `listening/keywords.yaml` | 社媒监听的意图词 |
 | `launchd/template.plist` | 常驻进程的 plist 模板 |
 | `superops/core/` | 领域引擎：触发、线程、评估、工单、派工、订阅的规则，不做 I/O |
 | `superops/app/` | 应用层：SQLite、副作用队列、发件箱、设置与策略、研判、组合根、提示词、管理 API |
-| `superops/sources/` | 来源：定时、流水线事件、终端、钉钉（含单聊和 @我 的监听，交给自动回复） |
+| `superops/sources/` | 来源：定时、流水线事件、终端、飞书、钉钉（二选一；含单聊和 @我，交给自动回复） |
 | `superops/executor/` | 执行器：Agent 池（降级、熔断、输出校验）、工单的一轮怎么跑、各 Agent 的调用方式 |
 | `superops/infra/` | 通用基础设施：路径与部署名（`instance`）、时间、配置加载、输出校验、打码、决策档案、钥匙串、钉钉 / 飞书发送渠道；不依赖 `biz/` |
-| `superops/biz/` | Popto 的业务模块：采集器、执行器、CI、专用浏览器、上下文提供者、数据保留、`ops.db`、入库、钉钉群指令解析 |
+| `superops/biz/` | Popto 的业务模块：采集器、执行器、开发与合并（GitLab / GitHub）、专用浏览器、上下文提供者、数据保留、`ops.db`、入库、群指令解析 |
 | `superops/panel/index.html` | 面板（单页，和管理 API 同址） |
 | `superops/cli.py` | `superops` 的全部子命令 |
 | `docs/` | 编号文档 000–010、[整体流程](docs/整体流程.md) 和 [整体设计](docs/整体设计.md) |
 | `tests/` | `uv run pytest -q` |
 
-数据目录 `~/popto-superops-data/`（不进 git，700 权限；路径由 `agents.yaml` 的 `instance.name: popto` 推出，环境变量 `SUPEROPS_DATA` 优先）：`superops.sqlite`（触发、线程、决定、工单、消息、运行记录）、`ops.db`（业务数据）、`local.yaml`（本机配置）、`auto-reply-context.md`（钉钉自动回复用的个人近况，自己改）、`work/<工单短名>/`（Agent 工单的目录：每轮的提示词、日志、`context/`、产出）、`runs/<工单短名>/`（脚本工单的 `task.json` 和日志）、`notify/console.log`（本机收件箱）、`logs/`、`browser-profiles/`。
+数据目录 `~/popto-superops-data/`（不进 git，700 权限；路径由 `agents.yaml` 的 `instance.name: popto` 推出，环境变量 `SUPEROPS_DATA` 优先）：`superops.sqlite`（触发、线程、决定、工单、消息、运行记录）、`ops.db`（业务数据）、`local.yaml`（本机配置）、`auto-reply-context.md`（自动回复用的个人近况，自己改）、`work/<工单短名>/`（Agent 工单的目录：每轮的提示词、日志、`context/`、产出）、`runs/<工单短名>/`（脚本工单的 `task.json` 和日志）、`notify/console.log`（本机收件箱）、`logs/`、`browser-profiles/`。
 
 ## 上手
 
 ```bash
 uv sync                      # 装依赖需要代理时先 export https_proxy=… http_proxy=…
 uv run superops init         # 建数据目录和两个库，生成 ~/popto-superops-data/local.yaml（默认用飞书群「测试superops」，附接 GitHub 仓库的例子）
-uv run superops doctor       # 检查 Agent CLI、飞书 / 钉钉命令行和登录、群、审批人、ffmpeg、钥匙串、策略、宿主是否在跑
+uv run superops doctor       # 逐项检查，没通过的写明怎么补：Agent CLI、飞书 / 钉钉（登录、权限、群、审批人）、开发与合并（git、GitLab / GitHub）、钥匙串、策略、宿主
 uv run pytest -q
 uv run superops run          # 前台启动：来源、评估、执行器、发件箱、管理 API 和面板（127.0.0.1:8797）
 ```
@@ -78,7 +80,7 @@ uv run superops status                          # 等你处理的、系统问题
 uv run superops mode auto                       # 看着没问题，再放开
 ```
 
-名单内的人直接提的请求在任何模式下都有效，可以先用它试一条完整的链路（没配钉钉时，确认和结果落在本机收件箱）：
+名单内的人直接提的请求在任何模式下都有效，可以先用它试一条完整的链路（没配聊天软件时，确认和结果落在本机收件箱）：
 
 ```bash
 uv run superops ask "帮我看看昨天那条抖音为什么掉量"
@@ -88,7 +90,17 @@ uv run superops inbox
 
 ### 正式启用前要配的
 
-1. **聊天软件**：`superops init` 生成的 `local.yaml` 默认用飞书（群「测试superops」，可以写群名，宿主自己换成群 ID），装好 `lark-cli` 并 `lark-cli auth login` 后，把 `lark-cli auth status` 里你的 `userOpenId` 填进 `policy.sources.lark.allowed`；细节见 [006 的“飞书”](docs/006-deployment.md)。改用钉钉时打开钉钉来源、填运营群，并把 home 渠道指到这个群（模板注释里有这段）：
+1. **聊天软件**：`superops init` 生成的 `local.yaml` 默认用飞书，群是「测试superops」（`--group` 换群，`--chat dingtalk` 用钉钉）。先装好并登录 lark-cli，再 init，群名会直接换成群 ID、你的 open_id 填进审批人；已经生成过的用 `superops init --reset-local`（先备份）。
+
+   ```bash
+   npm install -g @larksuite/cli && lark-cli config init --new
+   lark-cli auth login --domain im
+   lark-cli auth login --scope "im:message.send_as_user"    # 以你的身份往群里发消息；少了它确认、卡片、结果都发不出去
+   uv run superops init --reset-local
+   uv run superops doctor                                    # 飞书几行（登录、权限、群、home、审批人）都过了再重启宿主
+   ```
+
+   飞书没登录时生成的配置先写群名、审批人留空，登录后宿主自己把群名换成群 ID，审批人按 doctor 给出的那一行补上。细节见 [006 的“飞书”](docs/006-deployment.md)。改用钉钉时打开钉钉来源、填运营群，并把 home 渠道指到这个群（模板注释里有这段）：
 
    ```yaml
    home: {source: dingtalk, thread: home, address: {chat: "<运营群 openConversationId>"}}
@@ -103,8 +115,8 @@ uv run superops inbox
 
    群 ID 用 `dws chat +chat-search --query 运营` 查。`allowed` 里的人能在群里提请求、批所有问题、下指令；群消息事件带 `openDingTalkId`，卡片回调带 `userId`，两个都填，不认昵称。`answerers` 按规则 id 限定只能批某一类问题的人。想把某条规则的问题卡片发到另一个群，写 `sources.dingtalk.rule_chats: {lead-card: "<群 ID>"}`，那个群也会被监听。改完重启宿主。
 2. **密钥和登录**：见下面的“要提前登录的和要提前放好的密钥”。
-3. **CI**：`local.yaml` 的 `ci.projects` 填要接入的仓库（GitLab 如 `popto/frontend_popto`，GitHub 写 `github:<owner>/<repo>`，可以同时接），`ci.repos` 填各项目在本机的路径；`ci.auto_merge` 保持 `false`（合并都发卡片），跑稳后再打开；`ci.verify` 给每个项目配线上版本地址（如 `https://…/version.json`，内容里要有提交号），合并后自动核实上线，没配的合并后会请人确认上线（见 006 的“开发与合并”）。 GitHub 仓库要先 `gh auth login` 和 `gh auth setup-git`，`superops doctor` 的“开发与合并”几行逐项查（见 006 的“开发与合并”）。
-4. **常驻**：`uv run superops launchd install` 生成 `~/Library/LaunchAgents/cn.popto.superops.plist`，确认无误后 `uv run superops launchd install --load`。
+3. **开发与合并**（要让需求走到代码才配）：`local.yaml` 的 `ci.projects` 填要接入的仓库，GitLab 写项目路径（如 `popto/frontend_popto`，令牌放钥匙串），GitHub 写 `github:<owner>/<repo>`（先 `gh auth login --hostname github.com --git-protocol https --web` 和 `gh auth setup-git`），两种可以同时接；`ci.repos` 填各项目在本机的路径。`superops init` 生成的 `local.yaml` 末尾有接 GitHub 仓库的注释示例。`ci.auto_merge` 保持 `false`（合并都发卡片），跑稳后再打开；`ci.verify` 给每个项目配线上版本地址（如 `https://…/version.json`，内容里要有提交号），合并后自动核实上线，没配的合并后会请人确认上线。`superops doctor` 的“开发与合并”几行逐项查，细节见 006 的“开发与合并”。
+4. **常驻**：`uv run superops launchd install` 生成 `~/Library/LaunchAgents/cn.popto.superops.plist`（标签由 `instance.name` 推出），确认无误后 `uv run superops launchd install --load`。
 5. **Agent 专用浏览器**：`uv run superops browse install`（把 playwright-cli 装到数据目录 `tools/`，要走代理时加 `--proxy <npm 代理>`），再 `uv run superops browse login` 打开有界面的 Chrome，把要用的站点逐个登录后回车（`uv run superops browse sites` 看清单，也可以只登几个：`superops browse login douyin doubao`）。登录态存在 `~/popto-superops-data/browser-profiles/agent-browse`，和发布用的各平台目录分开；建议用专门的小号。`uv run superops browse check` 检查。
 6. **自动发布的登录**（要用才配）：`uv run superops publish login douyin`，`uv run superops publish check` 检查；各平台的模式在 `agents.yaml` 的 `publishers`（默认 `dry_run`；`draft` 填好存草稿不发布，`live` 直接发布）。发布时间按发布包里的 `scheduled_at`：批准时离它还来得及就用平台的“定时发布”，来不及就立即发布（细节见 [docs/006-deployment.md](docs/006-deployment.md) 的“自动发布”）。
 7. **Skill 分发**（可选）：`uv run superops skills link` 把 `ops-*` 软链接到 `~/.claude/skills` 和仓库内的 `.claude/skills`、`.agents/skills`。
@@ -123,9 +135,10 @@ uv run superops inbox
 | GitLab 令牌（机器人账号，api 权限） | 接了 GitLab 仓库时的 CI 轮询、MR 审查与写回、合并闸门、合并、开发工单的推送和开 MR | `security add-generic-password -s popto-ops/gitlab -a popto-ops -w <token>` | 钥匙串 |
 | GitHub 登录（gh） | 接了 GitHub 仓库时的同一批事：轮询 PR、审查写回、合并闸门、合并、推送和开 PR | `gh auth login --hostname github.com --git-protocol https --web`，再 `gh auth setup-git` | gh 自己（钥匙串） |
 | Agent 命令行已登录（Claude / Codex / Antigravity） | 所有 Agent 执行的规则 | 各自的命令行登录一次；`superops doctor` 看找到的命令在哪（装没装看命令本身，包装脚本可有可无） | 各 CLI 自己的目录 |
-| `dws` 已登录 | 钉钉来源（收群消息、发卡片） | `dws auth login` | dws 自己的配置 |
+| 飞书本人身份（lark-cli） | 飞书来源（收群消息、发卡片、自动回复） | `lark-cli auth login --domain im`，再 `lark-cli auth login --scope "im:message.send_as_user"`；7 天续一次 | lark-cli 自己（钥匙串） |
+| `dws` 已登录 | 钉钉来源（收群消息、发卡片） | `dws auth login --recommend` | dws 自己的配置 |
 
-登录态和密钥都**不跟着数据目录以外的东西走**：新建数据目录（包括从旧 ops 切过来）后，三个创作者后台和专用浏览器都要重新登录一次；钥匙串的服务名沿用 `popto-ops/<名>`，旧 ops 配过的不用重配。扫码登录只能由人来做，Agent 不会去登录任何站点。
+登录态和密钥都**不跟着数据目录以外的东西走**：新建数据目录（包括从旧 ops 切过来）后，三个创作者后台和专用浏览器都要重新登录一次；钥匙串的服务名是 `<instance.keychain_service>/<名>`（Popto 推出来是 `popto-ops/<名>`，和旧 ops 一样），旧 ops 配过的不用重配。扫码登录只能由人来做，Agent 不会去登录任何站点。
 
 **服务启动后会主动检查并提前告诉你**：每次启动，宿主把上表里“有规则用得到”的逐项查一遍（创作者后台是无界面打开 Chrome 看登录态，每个平台十来秒），没准备好的汇成一条消息发到 home 渠道，写清缺什么、影响哪些规则、一条命令怎么补；同样的缺口一天只提醒一次，全部就绪时不出声。没补上的会一直列在 `superops status` 和面板总览的“系统问题”里。随时可以自己查：
 
@@ -138,7 +151,7 @@ superops preflight --refresh  # 重新查一遍（补完之后用它复查）
 
 ## 在群里怎么用
 
-钉钉的卡片以 Markdown 消息发出，每张带工单编号。在群里回一行：
+飞书 / 钉钉的卡片以 Markdown 消息发出，每张带工单编号。在群里回一行：
 
 | 回复 | 作用 |
 | --- | --- |
@@ -152,11 +165,11 @@ superops preflight --refresh  # 重新查一遍（补完之后用它复查）
 | `暂停 collect-metrics` / `恢复 collect-metrics` | 暂停 / 恢复一条规则；`暂停 agent:claude` 暂停一个 Agent；`暂停 全部` 暂停全部处理 |
 | `@兔管家 帮我把周三那条脚本的开头改成提问式` | 向 Agent 提一个请求：主 Session 决定新开工单、转给已有工单还是忽略 |
 
-钉钉群没有话题，所以跟进一张工单要带它的编号：带编号的话落在这张工单自己的线程上，只到这一张工单。编号只认 `T` 开头的（`C12` 留给旧 ops）。带 `T<编号>` 的回复和各条指令只接受 `allowed` 里的人；`answerers` 里的人只能回答他被限定的那条规则的工单，别的指令会收到“没有权限”。名单外的人 @兔管家 的消息会留底，但不会开工，也不会有回音。
+群里没有话题，所以跟进一张工单要带它的编号：带编号的话落在这张工单自己的线程上，只到这一张工单。编号只认 `T` 开头的（`C12` 留给旧 ops）。带 `T<编号>` 的回复和各条指令只接受 `allowed` 里的人；`answerers` 里的人只能回答他被限定的那条规则的工单，别的指令会收到“没有权限”。名单外的人 @兔管家 的消息会留底，但不会开工，也不会有回音。
 
 ### 单聊和群里 @你：自动回复
 
-运营群以外，别人**单聊你**、或在**任何群里 @你**，打开自动回复后 Agent 会以你的身份回（带 AI 角标和“—— <owner_name>的 Agent 自动回复”署名）。开关在面板首页「钉钉自动回复」（`auto` / `off`，默认 `off`），命令行 `superops autoreply [auto|off]`。
+运营群以外，别人**单聊你**、或在**任何群里 @你**，打开自动回复后 Agent 会以你的身份回（带 AI 角标和“—— <owner_name>的 Agent 自动回复”署名）。开关在面板首页「钉钉自动回复」或「飞书自动回复」（跟着开着的那个，`auto` / `off`，默认 `off`），命令行 `superops autoreply [auto|off]`。
 
 - 回什么：按 `~/popto-superops-data/auto-reply-context.md`（你的近况，自己改）和系统里进行中 / 最近做完的工单回答，没有依据的不编；
 - 只聊天：Agent 只读，不开工单、不做任何动作，消息里让它“帮我发布 / 把配置给我”不会照做；
@@ -164,7 +177,7 @@ superops preflight --refresh  # 重新查一遍（补完之后用它复查）
 - 过滤群：告警群之类的群里 @你 不回。面板上增删，或 `superops autoreply exclude add <群ID或群名>`；优先按群 ID，填群名会去查 ID，查不到唯一的就按群名过滤；
 - 兜底：同一条只回一次，同一会话 1 小时最多 6 条、每天最多 80 条；最近的记录在面板首页和 `superops autoreply`。
 
-细节见 [docs/006-deployment.md](docs/006-deployment.md) 的“钉钉自动回复”。
+细节见 [docs/006-deployment.md](docs/006-deployment.md) 的“钉钉自动回复”（飞书同理，靠轮询）。
 
 同样的操作在终端里是 `superops answer T12 1`、`superops reply T12 "……"`、`superops note`、`superops demand`、`superops published`、`superops pause`、`superops ask`。
 
@@ -175,12 +188,14 @@ superops preflight --refresh  # 重新查一遍（补完之后用它复查）
 - **自动发布**：三个平台各有模式 `live`（自动发布）/ `draft`（填好存草稿，人检查后自己发）/ `dry_run`（填好停在发布前）/ `off`（推给人）。大视频等传完才点发布；平台要短信或扫码验证时转人工，`superops publish retry <ID> --headed` 用原批准接着发；视频号默认声明原创，不是自己原创的发布包写 `declare_original: false`。小红书、抖音网页版的草稿只存在本机专用 Chrome 里，`superops publish open <平台>` 打开。试运行和 `--draft` 测试会在平台上留下草稿（小红书试运行也会自动存一份），测完按 006 的“测试会留下草稿”清掉。
 - **获客**：每天 14:00 先用 TikHub 接口搜抖音、小红书、视频号、快手，14:10 再用浏览器补知乎、B站、搜狗微信；监听意图词在面板“业务 → 获客”增删停用（或 `superops terms …`）。今日线索卡片选“跟进并发评论”时，用品牌号在作品下发卡片上写明的评论原文（目前只有抖音，每天最多 10 条，不重发、不私信）；选“只记待跟进”就你自己去互动。每周四做竞品调研流程：采竞品作品下的用户评论，挖出候选需求发评审卡片（每条带来源作品），批了的进需求池；每 28 天另出一份竞品调研报告（定位、功能、价格、社媒、和 Popto 的对比，每条附来源）。细节见 006 的“获客”。
 - **指标采集**：发布后 1 小时 / 24 小时 / 72 小时 / 7 天自动采；想现在就看，面板“业务 → 数据回收”点“立即采集全部…”或某一行的“采集”，终端是 `superops metrics collect [作品ID…]`。手动快照不占节点。作品在平台删了用 `superops metrics removed <作品ID>` 标记，不再采。细节见 006 的“指标采集”。
-- **飞书**：和钉钉二选一（两个都开时配置校验报错），以本人身份收发；飞书没有“发给我本人”的事件，所以靠轮询（群 15 秒、单聊和 @我 30 秒）。配置见 006 的“飞书”。
+- **飞书**：和钉钉二选一（两个都开时配置校验报错），以本人身份收发；飞书没有“发给我本人”的事件，所以靠轮询（群 15 秒、单聊和 @我 30 秒）。群可以写群名，宿主第一次用到时换成群 ID。配置见 006 的“飞书”。
+- **开发与合并**：需求批准后开发工单在独立 worktree 里写代码、commit；推送和开 MR / PR 只由宿主做（开发档的 Agent 不给 `git push`、`gh`、`glab`）；Codex 审查、合并闸门、人批后合并、合并后核实上线。GitLab 和 GitHub 走同一条链路，GitHub 仓库默认往仓库的默认分支合。
+- **Agent 装没装看命令本身**：在 `agents.yaml` 的 `path`、PATH、常见安装目录和 nvm 里找 `claude` / `codex` / `agy`；`~/claude.sh` 这类包装脚本在就经它启动（代理在脚本里），不在就直接调命令（代理用 `local.yaml` 的 `proxy`）。
 - **钉钉自动回复**：不在授权模型里，因为它什么也做不了——只读起草一段文字发回原会话；开关由人在面板上打开，见上面“单聊和群里 @你”。
 - **审查者 ≠ 生产者**：复核和 MR 审查的工单会把产出方的 Agent 排除在降级链之外；链上没有别的可用 Agent 时排队等，不交给产出方自己审。
 - **降级与熔断**：额度 / 认证错误熔断该 Agent（额度 60 分钟或解析出的恢复时间，认证 6 小时并在健康板报错），这一轮立刻走下一个；网络错误冷却 5 分钟；超时换下一个，同一 Agent 连续 3 次超时熔断 30 分钟；浏览器档位的轮次（Antigravity、Codex）连续 10 分钟没有任何动作（输出、运行目录、浏览器页面快照都没变化）也按超时提前结束（`agent_browser.idle_timeout`，0 关掉；Claude 不启用：它最后才输出、查网页不写文件）；输出不合格先带着校验错误让同一 Agent 重试 1 次。主力只是忙（并发满）时先排队，等满 10 分钟（`overflow_after`）才顺延给下一个。decide / dev / review 的降级链只有 Claude 和 Codex，不落到更弱的模型。一个 Agent 不可用超过 2 小时发 P0 告警。
 - **额度策略**：`superops agents usage claude 0.75` 登记周用量后，P2 的工作把 Claude 排到链尾，P3 不再用 Claude。
-- **静默时段与每日卡片上限**：发往钉钉的消息在 22:30–08:00 只发 P0，其余等到早上；问题卡片每天最多 10 张，超出的顺延。问题到期（默认 24 小时）按卡片写好的安全选项处理。
+- **静默时段与每日卡片上限**：发往群里的消息在 22:30–08:00 只发 P0，其余等到早上；问题卡片每天最多 10 张，超出的顺延。问题到期（默认 24 小时）按卡片写好的安全选项处理。
 - **什么时候出声**：人直接提的请求，确认一次、交付一次；定时和普通业务事件起的工单只有 `tell: always`（日报、线上核实不一致）才把结果发出来，其余只在要人拍板时出声，结论进日报。人批准的动作开出的工单（发布、回复、合并、写稿、开发）授权是明确的，在任何接单模式下都执行，出不出声仍照规则的 `tell`。
 - **不可信输入**：评论、帖子、网页、名单外的人的群消息和外部来源的事件数据都放进 `<<<UNTRUSTED_DATA … UNTRUSTED_DATA>>>`；处理它们的规则用 `readonly` 档位。Agent 子进程的环境变量里不带 TOKEN / SECRET / API_KEY / PASSWORD，也没有管理 API 的地址。
 - **打码与数据保留**：Agent 的每一轮结束把工单目录扫一遍，输出里的 Cookie、Authorization、各类 token、手机号打码后才入库和回传；脚本的输出、专用浏览器的输出和页面快照同样先打码。运行目录保留 90 天，正文（触发、工单输入与报告、消息）170 天后清空，评论原文 180 天删除，元数据永久保留。
@@ -199,8 +214,10 @@ superops preflight --refresh  # 重新查一遍（补完之后用它复查）
 | 业务模块 `superops/biz/` | 代码基本与 ops 相同，`tests/biz/` 是 ops 对应测试的移植。自动发布已在抖音、视频号、小红书真实发出过（11-11：30 秒上新片、14 分钟讲解片，含短信 / 扫码验证后的重试），作品登记和采集计划随之生成；存草稿模式在三个平台都实测过（含 14 分钟的讲解片），测试草稿已清理；视频号声明原创试运行过。指标采集（定时的 1 小时节点、手动采集）已在三个平台真实跑过。需求 → 开发用一条测试需求真实走到合并（11-12，T70–T76，popto!13）；合并后线上核实因为前端没有 `version.json` 还接不上，合并时会请人确认。获客：浏览器监听和接口监听都真实跑过（对比见 006 的“获客”）；“跟进并发评论”11-12 用品牌抖音号在抖音真实发出 7 条（T108），都在评论列表里核对到了。竞品调研流程真实跑过：竞品评论评审（T130，254 条评论 → 10 条候选需求，人批后全部进需求池）、竞品调研报告（T133，5 个竞品，每条附来源） |
 | 提示词与 Skill（`prompts/`、`skills/ops-*/`） | 已按工单、报告、订阅的说法重写；`tests/test_prompts_skills.py` 只做静态检查（文件齐全、拼进了该去的角色、Skill 里的事件类型有规则接）。除上面那次 Claude 的端到端之外，各条规则的 Skill 在真实 Agent 上的效果没有逐条验证过 |
 | 面板 | 一个静态页面读管理 API（见 [docs/005-panel.md](docs/005-panel.md)）；`tests/app/test_panel.py` 检查它只调用存在的接口，没有浏览器里的自动化测试。`uv run python tests/app/demo_server.py` 用假数据起一个面板 |
+| 部署名与另起一套部署（`instance`、`SUPEROPS_HOME`） | 已实现：Popto 由 `name: popto` 推出的数据目录、钥匙串服务名、launchd 标签和原来一样；另起一套（`name: acme`、单独端口和配置目录）在临时目录里跑通过 init、check、launchd plist、宿主启动和请求路由。业务包的扩展点（上下文提供者、面板业务页、启动检查项由业务包注册）还没做，见 007 的“依赖规则”里“还没拆干净的地方” |
+| 开发与合并接 GitHub | 已实现，`tests/biz/test_biz_github.py` 用假 gh 测客户端和整条链路，GitHub 仓库的 worktree 用真 git 走过；在真实 GitHub 上只做过只读调用（PR #1 的字段、108 个文件的改动、checks、默认分支、merge-base 都对），“推送 → 开 PR → 审查 → 合并”还没在真实仓库上由系统自己走一遍 |
 | 语义规则（没有 `when`、由主 Session 研判的规则） | 机制已实现；`policy.yaml` 里目前一条都没有，58 条规则全部由事件直接命中 |
-| 没有做的 | 面板里改规则、名单和提示词，提示词版本，多语言；机器名单（`bots`）目前没有来源会用到；有几种事件还没有发送方（见 [整体流程](docs/整体流程.md)） |
+| 没有做的 | 业务包扩展点（见上）；面板里改规则、名单和提示词，提示词版本，多语言；机器名单（`bots`）目前没有来源会用到；有几种事件还没有发送方（见 [整体流程](docs/整体流程.md)） |
 
 ## 文档
 
