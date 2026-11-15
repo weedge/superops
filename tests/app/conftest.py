@@ -21,7 +21,7 @@ AGENTS = {
     "fallback_chains": {"decide": ["claude", "codex"], "write": ["claude", "codex"], "review": ["codex", "claude"],
                         "classify": ["claude", "codex"], "dev": ["claude", "codex"]},
     "circuit_breaker": {"quota_patterns": ["usage limit"], "auth_patterns": ["not logged in"], "network_patterns": ["econnrefused"]},
-    "budgets": {"popto_credits": 100},
+    "budgets": {"credits": 100},          # 不写 instance：计数器用通用默认名 credits
     "quiet_hours": None, "max_cards_per_day": 10, "card_default_ttl": "24h",
     "agent_browser": {"enabled": False},
 }
@@ -68,7 +68,7 @@ POLICY = {
 @pytest.fixture(autouse=True)
 def _no_real_lark(monkeypatch):
     """测试里绝不调真的 lark-cli（会以本人身份往飞书发消息）：要用的测试自己替换 lark 里的函数。"""
-    from superops.biz.notifier import lark
+    from superops.infra.notifier import lark
 
     def refuse(args, **k):
         raise lark.LarkError(f"测试里不调真的 lark-cli：{' '.join(args[:2])}")

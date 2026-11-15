@@ -22,8 +22,10 @@ from jsonschema import Draft202012Validator
 from ..app import prompts
 from ..app.effects import Later
 from ..app.settings import rule_of
-from ..biz import agent_browser, config as bizconfig, context as bizcontext, governance, ingest, paths, redact, validate as bizvalidate
-from ..biz.timeutil import iso, parse_duration
+from ..biz import agent_browser, context as bizcontext, ingest
+from ..infra import config as cfgmod, governance, paths, redact, validate as bizvalidate
+from ..infra.instance import current as current_instance
+from ..infra.timeutil import iso, parse_duration
 from ..core.errors import UserError
 from ..core.model import iso_time, latest_report, live_ticket, ms, now_iso, running_assignment, shift, waits_for_person
 from .adapters import RunSpec, adapter_for
@@ -279,7 +281,7 @@ class TicketExecutor:
         (run_dir / "output.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
         self._emit(ticket, out.get("follow_up_events"), agent="script", trusted=True)
         if out.get("credits_used"):
-            self.rt.add_counter("popto_credits", float(out["credits_used"]))
+            self.rt.add_counter(current_instance().credits_counter, float(out["credits_used"]))
         summary = str(out.get("summary") or "(空)")[:1000]
         card = out.get("decision_card") if isinstance(out.get("decision_card"), dict) else None
         if out.get("status") == "failed":
@@ -313,7 +315,7 @@ class TicketExecutor:
         role, tools = run.get("role", "write"), run.get("tools", "workspace")
         triggers = self._triggers(ticket, inputs, first)
         lease = self._lease(ticket, rule, run, triggers, turns)
-        skill_dir = bizconfig.find_skill(run["skill"], rt.cfg, rt.home) if run.get("skill") else None
+        skill_dir = cfgmod.find_skill(run["skill"], rt.cfg, rt.home) if run.get("skill") else None
         if run.get("skill") and not skill_dir:
             self._mark(ticket_id, assignment["id"], inputs)
             self._safe_report(ticket_id, {"state": "failed", "summary": f"找不到 Skill {run['skill']}"})
@@ -530,7 +532,7 @@ class TicketExecutor:
         for event in [*friction, *feedback]:
             rt.pipeline.emit(event, trusted=True)
         if out.get("credits_used"):
-            rt.add_counter("popto_credits", float(out["credits_used"]))
+            rt.add_counter(current_instance().credits_counter, float(out["credits_used"]))
         out = self._require_conclusion(ticket_id, run, out, host_events)
         state = "waiting" if out["state"] == "progress" else out["state"]
         report = {"state": state, "summary": out["summary"]}

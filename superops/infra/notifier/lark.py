@@ -43,6 +43,16 @@ def run(args: list[str], *, timeout: float = 60) -> dict | list:
         raise LarkError(f"lark-cli 输出不是 JSON：{(p.stdout or '')[:200]}") from e
 
 
+def find_chat(name: str) -> str:
+    """群名 → 群 ID（oc_ 开头）。只认完全一样且唯一的群名，否则抛 LarkError 让人填 ID。"""
+    data = run(["im", "+chat-search", "--query", name, "--format", "json"])
+    chats = ((data.get("data") or {}).get("chats") if isinstance(data, dict) else None) or []
+    hits = [c for c in chats if c.get("name") == name and c.get("chat_id")]
+    if len(hits) != 1:
+        raise LarkError(f"按群名「{name}」找到 {len(hits)} 个群，请直接填群 ID（oc_ 开头）")
+    return str(hits[0]["chat_id"])
+
+
 def _items(data) -> list[dict]:
     """从各种包法里取消息列表：直接是列表、data.items / data.messages / items / messages。"""
     if isinstance(data, list):
@@ -168,6 +178,17 @@ def auth_status() -> dict:
         d = json.loads(p.stdout or "{}")
     except (FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError) as e:
         return {"ok": False, "detail": f"lark-cli 不可用：{e}"}
+    return parse_auth_status(d)
+
+
+def parse_auth_status(d: dict) -> dict:
+    """两种输出都认：1.0.100 起本人身份在 identities.user 里（status / available / openId / userName / tokenStatus），
+    更早的版本是顶层的 identity / tokenStatus / userOpenId / userName。"""
+    user = (d.get("identities") or {}).get("user") if isinstance(d.get("identities"), dict) else None
+    if isinstance(user, dict):
+        ok = bool(user.get("available")) and user.get("status") == "ready" and user.get("tokenStatus") != "expired"
+        return {"ok": ok, "user": user.get("userName"), "open_id": user.get("openId"),
+                "detail": "已登录" if ok else (user.get("message") or "本人身份没登录或已过期")}
     ok = d.get("tokenStatus") not in ("expired", None) and d.get("identity") == "user"
     return {"ok": ok, "user": d.get("userName"), "open_id": d.get("userOpenId"),
             "detail": "已登录" if ok else (d.get("note") or "本人身份没登录或已过期")}

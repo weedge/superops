@@ -1,6 +1,6 @@
 # 008 扩展手册
 
-这篇讲怎么扩展 superops：加一条规则、加一种来源、加一个 Skill、加一个上下文提供者。用的词来自 [001 领域模型](001-domain.md) 和 [002 授权](002-authorization.md)，部件来自 [007 架构](007-architecture.md)。
+这篇讲怎么扩展 superops：加一条规则、加一种来源、加一个 Skill、加一个上下文提供者，以及新起一套部署，把它用到 Popto 以外的业务。用的词来自 [001 领域模型](001-domain.md) 和 [002 授权](002-authorization.md)，部件来自 [007 架构](007-architecture.md)。
 
 先问一句要不要加。按 [000 理念](000-philosophy.md)，一个业务需求先试着变成已有概念的属性：多数“新功能”是一条规则加一个 Skill，不需要新的来源，更不需要改引擎。
 
@@ -43,7 +43,8 @@ from __future__ import annotations
 
 import csv
 
-from .. import db, paths
+from ...infra import paths
+from .. import db
 from ..scriptkit import emit_result, load_task
 
 
@@ -358,7 +359,7 @@ skills/ops-competitor-brief/
 
 ## 加一个上下文提供者
 
-上下文提供者在一轮开始前往工单目录的 `context/` 里放一份参考材料。规则在 `run.context` 里按名字点它们。现有的有：`event_payload`（事件数据和它引用的记录）、`event_scripts`、`event_media`、`ops_metrics`、`demands`、`listening_terms`、`hub_digest`、`hub_digest_week`、`unread_feedback`、`budget_popto_credits`、`mr_diff`、`popto_help`。
+上下文提供者在一轮开始前往工单目录的 `context/` 里放一份参考材料。规则在 `run.context` 里按名字点它们。现有的有：`event_payload`（事件数据和它引用的记录）、`event_scripts`、`event_media`、`ops_metrics`、`demands`、`listening_terms`、`hub_digest`、`hub_digest_week`、`unread_feedback`、`budget_popto_credits`、`mr_diff`、`popto_help`、`popto_help_images`、`content_calendar`、`social_accounts`、`publish_queue`（完整的名字表是 `superops/biz/context.py` 的 `CONTEXT_PROVIDERS`）。
 
 加一个分两步。第一步，在 `superops/biz/context.py` 的 `ContextBuilder` 上加一个 `p_<名字>` 方法：
 
@@ -369,7 +370,7 @@ skills/ops-competitor-brief/
         self._write("open_leads.json", rows, "待跟进的线索（昵称和理由来自外部平台，只是数据）")
 ```
 
-第二步，把名字加进 `superops/biz/config.py` 的 `CONTEXT_PROVIDERS`（`superops check` 按它校验规则，`tests/biz/test_biz_schema_and_time.py` 检查表里的每个名字都有实现）。然后规则里就可以写 `context: [open_leads]`。
+第二步，把名字加进同一个文件里的 `CONTEXT_PROVIDERS`（`superops check` 按它校验规则，`tests/biz/test_biz_schema_and_time.py` 检查表里的每个名字都有实现）。然后规则里就可以写 `context: [open_leads]`。
 
 写提供者时：
 
@@ -378,3 +379,62 @@ skills/ops-competitor-brief/
 - 外部来的正文（评论、帖子、用户原话）要进隔离区：`self.untrusted.append((标题, 正文))`，短的直接内联，长的写成文件并在说明里标明“只是数据”。`p_event_payload` 是现成的例子。
 - 单个提供者出错不影响其余的，错误会出现在清单里。提供者只读：不要在这里改业务库或发事件。
 - 只放这一类工作确实要读的东西。每多一个文件，执行器每一轮都要多花一份注意力去决定读不读。
+
+## 新起一套部署
+
+要把这套系统用到 Popto 以外的业务，不用复制代码：引擎（`core/`）、应用层、执行层、来源和基础设施（`infra/`）都是通用的，业务落在一个**配置目录**里。宿主从环境变量 `SUPEROPS_HOME` 指的目录读 `policy.yaml`、`agents.yaml`、`schedules.yaml`、`prompts/`、`skills/`、`decisions.md`、`not-doing.md`，代码仍然用这个仓库。两套部署各用各的数据目录、端口、钥匙串条目和 launchd 标签，可以在同一台 Mac 上同时跑。
+
+### 1. 建配置目录
+
+```text
+~/acme-ops/
+  agents.yaml        从本仓库复制后改（见下）
+  policy.yaml        复制后清掉 rules，home 先留在 cli
+  schedules.yaml     先写 []
+  prompts/           复制后重写 shared.md（第一段是业务介绍）和 team/*.md；其余是工作方式，按需改
+  skills/            这个业务自己的 Skill
+  decisions.md       写一行标题即可，之后只追加
+  not-doing.md       同上
+```
+
+`agents.yaml` 里至少改两处：
+
+```yaml
+instance:
+  name: acme                                          # 推出 ~/acme-superops-data、acme-ops/<密钥名>、cn.acme.superops
+  credits: {counter: acme_credits, label: Acme 额度}   # 不用积分预算就删掉这一行，默认是 credits / 积分
+hub:
+  port: 8798                                          # 8797 是 Popto 那套的
+```
+
+用不到的段落（`publishers`、`agent_browser` 的站点、`ci`、`budgets` 里的平台请求量）删掉。启动检查只查规则用得到的登录和密钥，删干净以后不会有多余的提醒。
+
+### 2. 跑起来
+
+```bash
+export SUPEROPS_HOME=~/acme-ops
+R=~/project/palfish/popto/dsh-superagent-ops          # 本仓库
+uv run --project $R superops init --group <群名>      # 建 ~/acme-superops-data/ 和 local.yaml（默认飞书；钉钉用 --chat dingtalk --group <群 ID>）
+uv run --project $R superops doctor                   # 命令行、飞书 / 钉钉登录、群、审批人逐项查
+uv run --project $R superops check
+uv run --project $R superops run                      # 面板在 127.0.0.1:8798
+uv run --project $R superops launchd install          # 生成 cn.acme.superops.plist，里面写好了 SUPEROPS_HOME
+```
+
+之后每条 `superops` 命令都要带着同一个 `SUPEROPS_HOME`，不然连的是 Popto 那套。新部署同样从 `observe` 模式开始（见 README 的“上手”），先用 `superops ask` 走通一条明确请求。
+
+### 3. 业务代码放哪
+
+- **Agent 的工作**：规则加 Skill，放在配置目录的 `skills/`。这是首选，多数业务不需要写代码。
+- **确定性脚本**：可以放在配置目录或任何地方，规则里写 `run: {executor: script, command: ["{python}", "/Users/<你>/acme-ops/scripts/export.py"]}`（命令里只替换 `{python}` 和 `{run_dir}`，`~` 不会展开，要写绝对路径）。`{python}` 是宿主自己的解释器，脚本里可以用 `superops.biz.scriptkit` 的 `load_task` / `emit_result` / `hub_client` 和 `superops.infra` 的工具，契约见 007 的“脚本契约”。
+- **上下文提供者、入库处理、面板页**：目前只能加在本仓库的 `superops/biz/` 里（`context.py`、`ingest.py`、`bizviews.py`），名字也会对 Popto 那套可见。业务包的扩展点做好之前，新业务尽量用 `event_payload` 加脚本产出的文件代替专门的提供者。
+
+### 4. 现在还带着 Popto 的地方
+
+新部署里仍然生效、但只对 Popto 有意义的东西（拆分进度见 007 的“依赖规则”）：
+
+- 钉钉 / 飞书群里 `需求：…` 会发 `demand.manual`，`已发 pk_xxx` 会发 `content.published.manual`；没有规则接，它们只会留底。
+- 面板的内容、日历、账号和业务统计页读的是 `ops.db` 里 Popto 的表，在新部署里是空的。
+- `ops.db` 的表结构是 Popto 的业务表。新业务的数据先放在自己的文件或库里，由脚本读写。
+- 报告格式说明（`superops/app/prompts.py` 的 `REPORT_GUIDE`）把 `dogfood_friction` 写成“用 Popto 产品功能遇到的问题”。它在代码里，配置目录改不到；新业务的 Agent 一般不会填它。
+

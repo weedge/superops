@@ -7,7 +7,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from . import paths
+from ..infra import paths
 
 OPS_DDL = """
 CREATE TABLE IF NOT EXISTS contents (

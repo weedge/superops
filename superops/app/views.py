@@ -8,6 +8,7 @@ from __future__ import annotations
 from ..core.model import latest_report, live_ticket, now_iso, shift, thread_key
 from ..core.reasons import reason_text
 from ..core.stage import can_retry, ticket_stage
+from ..infra.instance import current as current_instance
 from .settings import policy_version, rule_of
 
 STAGE_LABELS = {
@@ -139,6 +140,13 @@ def agent_roster(rt, settings: dict) -> dict:
     return states
 
 
+def credit_counters(rt) -> dict:
+    """今日积分：计数器名和预算键都是 agents.yaml 的 instance.credits.counter。"""
+    inst = current_instance()
+    return {"name": inst.credits_counter, "label": inst.credits_label, "used": rt.counter(inst.credits_counter),
+            "budget": (rt.cfg.get("budgets") or {}).get(inst.credits_counter)}
+
+
 def overview(rt) -> dict:
     since = shift(now_iso(), -86400)
     settings = rt.settings.current()
@@ -160,8 +168,7 @@ def overview(rt) -> dict:
         "executor": rt.executor.load(), "agents": agent_roster(rt, settings),
         "mode": settings["eval"]["mode"], "paused": settings["paused"], "paused_keys": settings["paused_keys"],
         "autoreply": rt.autoreply.view() if getattr(rt, "autoreply", None) else None,
-        "policy_version": policy_version(settings)[:12], "counters": {"popto_credits": rt.counter("popto_credits"),
-                                                                    "budget": (rt.cfg.get("budgets") or {}).get("popto_credits")},
+        "policy_version": policy_version(settings)[:12], "counters": credit_counters(rt),
         "at": now_iso()}
 
 

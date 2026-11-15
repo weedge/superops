@@ -8,9 +8,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Callable
 
-from ..biz import config as bizconfig
+from ..infra import config as cfgmod
 from ..biz import scheduler
-from ..biz.timeutil import iso, now as biz_now
+from ..infra.timeutil import iso, now as biz_now
 from ..core.reasons import key
 from .kind import SourceKind
 
@@ -27,7 +27,7 @@ class ScheduleSource(SourceKind):
 
     def specs(self) -> list[dict]:
         if self._specs is None:
-            self._specs = bizconfig.load_schedules(self.host.home) or []
+            self._specs = cfgmod.load_schedules(self.host.home) or []
         return self._specs
 
     def reload(self) -> None:

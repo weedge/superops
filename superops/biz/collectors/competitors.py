@@ -20,10 +20,12 @@ import time
 from datetime import timedelta
 from pathlib import Path
 
-from .. import db, paths
-from ..config import load_agents_config
+from .. import db
+from ...infra import paths
+from ...infra.config import load_agents_config
+from ...infra.secrets import service_for
 from ..scriptkit import emit_result, hub_client
-from ..timeutil import iso, now, parse_iso
+from ...infra.timeutil import iso, now, parse_iso
 from .listening import _clip, _post, _ts
 from .tikhub import TikHub
 
@@ -243,7 +245,7 @@ def run(mode: str) -> None:
         return
     th = TikHub(proxy=None)
     if not th.configured:
-        emit_result("没配 TikHub Key（钥匙串 popto-ops/tikhub），竞品数据采集跳过", status="failed")
+        emit_result(f"没配 TikHub Key（钥匙串 {service_for('tikhub')}），竞品数据采集跳过", status="failed")
         return
     hub = hub_client()
     budget = int((cfg.get("budgets") or {}).get("tikhub_requests", 0) or 0)

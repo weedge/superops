@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from .timeutil import TZ, parse_duration, parse_hhmm
+from ..infra.timeutil import TZ, parse_duration, parse_hhmm
 
 WEEKDAYS = {"MON": 0, "TUE": 1, "WED": 2, "THU": 3, "FRI": 4, "SAT": 5, "SUN": 6}
 

@@ -1,12 +1,12 @@
 """内网 GitLab API v4 最小客户端（实测服务端 11.11.1，只用 11.x 已有的接口和参数）。
-Token 放钥匙串 popto-ops/gitlab。"""
+Token 放钥匙串 <instance.keychain_service>/gitlab。"""
 from __future__ import annotations
 
 import json
 import urllib.parse
 import urllib.request
 
-from ..scriptkit import keychain
+from ...infra.secrets import keychain
 
 
 class GitLab:

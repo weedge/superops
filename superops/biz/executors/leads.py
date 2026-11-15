@@ -18,7 +18,7 @@ from pathlib import Path
 
 from .. import db, platforms
 from ..scriptkit import emit_result, load_task
-from ..timeutil import iso, now
+from ...infra.timeutil import iso, now
 
 MAX_PER_CARD = 10  # 当日建议互动的线索不超过 10 条（ops-social-listening §2.6）
 DAILY_COMMENTS = 10   # 品牌号一天最多自动发这么多条评论（多了容易被平台当成营销号限流）
@@ -138,7 +138,7 @@ def below_min(leads: list[dict], min_followers: int) -> list[dict]:
 
 def cmd_card() -> None:
     from ..collectors.listening import settings
-    from ..config import load_agents_config
+    from ...infra.config import load_agents_config
 
     ops = db.open_ops()
     leads = pending(ops, limit=MAX_PER_CARD * 3)
@@ -180,7 +180,7 @@ def cmd_run() -> None:
 
 def wait_gap(ops) -> float:
     """离上一条自动评论（不管是哪张工单发的）不到 GAP_S 就等到够。返回等了几秒。"""
-    from ..timeutil import parse_iso
+    from ...infra.timeutil import parse_iso
     last = ops.execute("SELECT MAX(commented_at) FROM leads WHERE comment_status IN ('sent','unconfirmed')").fetchone()[0]
     if not last:
         return 0.0
@@ -195,7 +195,7 @@ def comment_lock():
     """跨进程排队发评论：同时开的几张评论工单一条一条来，间隔从上一条算（2026-11-12 七张工单各发一条，只隔了 11–14 秒）。"""
     import fcntl
 
-    from .. import paths
+    from ...infra import paths
     lock = paths.ops_data() / "browser-profiles" / ".comment.lock"
     lock.parent.mkdir(parents=True, exist_ok=True)
     with open(lock, "a") as f:

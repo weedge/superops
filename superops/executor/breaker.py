@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from datetime import timedelta
 
-from ..biz.timeutil import iso, now
+from ..infra.timeutil import iso, now
 
 
 def classify(text: str, *, timed_out: bool, cb: dict) -> str:

@@ -20,7 +20,7 @@ import re
 from datetime import timedelta
 from pathlib import Path
 
-from ...timeutil import now
+from ....infra.timeutil import now
 import time
 
 from . import (TIME_FMT, UPLOAD_WAIT_S, NeedsVerification, NotLoggedIn, PublishError, PublishResult, browser, is_logged_in,

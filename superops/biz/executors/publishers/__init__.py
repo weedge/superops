@@ -20,8 +20,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from ... import paths
-from ...timeutil import TZ, now, parse_iso
+from ....infra import paths
+from ....infra.timeutil import TZ, now, parse_iso
 
 PLATFORMS = {
     "douyin": {"label": "抖音", "home": "https://creator.douyin.com/creator-micro/home",

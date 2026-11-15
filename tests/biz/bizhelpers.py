@@ -7,7 +7,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from superops.biz import timeutil
+from superops.infra import timeutil
 
 
 def at(s: str) -> datetime:

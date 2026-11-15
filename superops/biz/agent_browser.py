@@ -22,8 +22,8 @@ import sys
 import time
 from pathlib import Path
 
-from . import paths, redact
-from .timeutil import iso
+from ..infra import paths, redact
+from ..infra.timeutil import iso
 
 SESSION = "ops-agent"
 DEFAULT_CLI = ["npx", "-y", "@playwright/cli@0.1.24"]
@@ -216,7 +216,7 @@ def login(cfg: dict, urls: list[str]) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    from . import config as cfgmod
+    from ..infra import config as cfgmod
 
     args = list(sys.argv[1:] if argv is None else argv)
     cfg = cfgmod.load_agents_config()

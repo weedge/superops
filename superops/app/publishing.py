@@ -24,7 +24,7 @@ import threading
 import uuid
 from pathlib import Path
 
-from ..biz import paths
+from ..infra import paths
 
 ACTIONS = {
     # 动作: (标签, 作用对象（account 账号键 / pack 发布包 ID）, 有没有界面, 子进程参数)

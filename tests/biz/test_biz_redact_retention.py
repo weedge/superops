@@ -14,8 +14,9 @@ from pathlib import Path
 import pytest
 
 from superops.biz import agent_browser as ab
-from superops.biz import db, redact, retention
-from superops.biz.timeutil import iso, now
+from superops.biz import db, retention
+from superops.infra import redact
+from superops.infra.timeutil import iso, now
 
 
 LEAKS = [

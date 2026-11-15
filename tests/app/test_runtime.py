@@ -287,7 +287,7 @@ def test_human_approved_actions_run_even_in_observe_mode(world):
 def test_reply_by_code_reaches_only_that_ticket_not_others_on_shared_thread(world):
     rt = world
     for _ in range(3):
-        rt.schedule.fire("cron.daily_brief", due=__import__("superops.biz.timeutil", fromlist=["now"]).now().replace(minute=_))
+        rt.schedule.fire("cron.daily_brief", due=__import__("superops.infra.timeutil", fromlist=["now"]).now().replace(minute=_))
         rt.pump()
     briefs = by_rule(rt, "daily-brief")
     assert len(briefs) == 3 and all(t.get("ended") for t in briefs)

@@ -15,8 +15,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .. import paths
-from ..timeutil import now
+from ...infra import paths
+from ...infra.timeutil import now
 
 SUPPORTED = {"douyin"}
 MAX_LEN = 100                  # 抖音评论上限更长，这里按“短、具体”的口径卡在 100 字

@@ -1,7 +1,7 @@
 """把卡片 JSON（附录 D）渲染成钉钉 / 飞书都能显示的 Markdown。"""
 from __future__ import annotations
 
-from ..timeutil import parse_iso
+from ...infra.timeutil import parse_iso
 
 KIND_LABEL = {
     "publish_batch": "待发布",
@@ -100,7 +100,7 @@ def local_file(ln) -> "Path | None":
     """卡片里的本机文件链接（相对路径按数据目录解析）；可作为文件发进群的才返回。"""
     from pathlib import Path
 
-    from .. import paths
+    from ...infra import paths
 
     if not ln or str(ln).startswith(("http://", "https://")):
         return None

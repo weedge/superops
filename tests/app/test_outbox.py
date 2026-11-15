@@ -13,7 +13,7 @@ from superops.app.effects import Effects
 from superops.app.health import HealthBoard
 from superops.app.outbox import Outbox, parse_quiet, quiet_until
 from superops.app.store import Store
-from superops.biz.timeutil import TZ
+from superops.infra.timeutil import TZ
 from superops.core.model import to_iso
 
 

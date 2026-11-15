@@ -25,8 +25,8 @@ import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from ..biz import paths
-from ..biz.timeutil import TZ, parse_iso
+from ..infra import paths
+from ..infra.timeutil import TZ, parse_iso
 from ..core.model import now_iso
 from ..core.reasons import key
 
@@ -296,7 +296,7 @@ class AutoReply:
     def _history(self, payload: dict) -> list[dict]:
         """会话里最近 8 条消息（含这条），帮 Agent 看懂上下文；读不到就算了。"""
         if payload.get("platform") == "lark":
-            from ..biz.notifier import lark
+            from ..infra.notifier import lark
             try:
                 since = (datetime.now(TZ) - timedelta(days=7)).isoformat(timespec="seconds")
                 rows = [{"time": m.get("create_time") or "", "sender": m.get("sender") or "", "text": m["content"][:500]}
@@ -322,7 +322,7 @@ class AutoReply:
         """以我的身份发出。群里引用原消息回复；单聊直接发给对方。自动回复开关就是授权，所以带 --yes。
         飞书：单聊和群里都用引用回复（lark-cli im +messages-reply --as user），发出的消息记下 ID，轮询时不当成新消息。"""
         if payload.get("platform") == "lark":
-            from ..biz.notifier import lark
+            from ..infra.notifier import lark
             try:
                 mid = lark.reply(payload["message_id"], text)
             except lark.LarkError as error:

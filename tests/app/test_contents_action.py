@@ -11,7 +11,8 @@ from superops.app.http import ApiError
 
 
 def _content(world, cid, fmt="小红书图文，8 页", status="scripted", pack=None, platform="xiaohongshu"):
-    from superops.biz import db, paths
+    from superops.biz import db
+    from superops.infra import paths
     f = paths.ops_data() / "work" / "t1" / "scripts" / cid / f"{platform}.md"
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text(f"# 稿子\n- 平台：{fmt}\n", encoding="utf-8")
@@ -64,7 +65,7 @@ def test_删除要确认_在发布的不让删_没批的发布包一起作废(wo
 
 
 def test_发布_写好稿的图文才行_发出带凭据的出图事件(world, monkeypatch):
-    from superops.biz import timeutil
+    from superops.infra import timeutil
     monkeypatch.setattr(timeutil, "now", lambda: timeutil.parse_iso("2026-11-13T10:00:00+08:00"))
     sent = []
     monkeypatch.setattr(world.pipeline, "emit", lambda event, **kw: sent.append((event, kw)) or {"routed": "trigger"})

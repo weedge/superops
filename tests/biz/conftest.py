@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from superops.biz import timeutil
+from superops.infra import timeutil
 
 from bizhelpers import FakeHost
 
@@ -18,8 +18,8 @@ COPY = ["agents.yaml", "schedules.yaml", "decisions.md", "not-doing.md", "skills
 
 @pytest.fixture(autouse=True)
 def _no_keychain_in_redact(monkeypatch):
-    """打码默认会读钥匙串里的真密钥（superops.biz.redact）；测试里一律不碰钥匙串。"""
-    from superops.biz import redact
+    """打码默认会读钥匙串里的真密钥（superops.infra.redact）；测试里一律不碰钥匙串。"""
+    from superops.infra import redact
 
     monkeypatch.setattr(redact, "_known_secrets", lambda: ())
 

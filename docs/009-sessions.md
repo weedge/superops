@@ -26,8 +26,8 @@
 
 | Agent | 续接 | 命令 |
 | --- | --- | --- |
-| Claude | 开（`agents.yaml` 的 `resume: true`） | 照常通过包装脚本 `~/claude.sh` 启动，加 `--resume <会话 ID>` |
-| Codex | 开（`resume: true`，2026-11-12 起） | 直调本体 `strict_bin`：`codex -a never -s <沙箱> -C <工作目录> [--add-dir …] exec resume <会话 ID> --skip-git-repo-check --json -o … -`，代理从包装脚本 `~/codex.sh` 里读出来由宿主设 |
+| Claude | 开（`agents.yaml` 的 `resume: true`） | 包装脚本 `~/claude.sh` 在就经它启动，不在就直接调 `claude` 命令，加 `--resume <会话 ID>` |
+| Codex | 开（`resume: true`，2026-11-12 起） | 直调本体（`strict_bin` 在就用它，否则用找到的 `codex` 命令）：`codex -a never -s <沙箱> -C <工作目录> [--add-dir …] exec resume <会话 ID> --skip-git-repo-check --json -o … -`，代理从包装脚本 `~/codex.sh` 里读出来由宿主设 |
 | Antigravity | 不续接 | 每轮新开；记下的 ID 目前不用 |
 
 **Codex 为什么续接时要绕开包装脚本。** `~/codex.sh` 固定带 `-s danger-full-access`；首轮的 `codex exec -s workspace-write` 能把它盖掉，但 `codex exec resume` 不接受 `-s`，用 `-c sandbox_mode=…` 也盖不过它。2026-11-12 实测：只读档的续接轮照样写出了文件。直调本体、把沙箱放在顶层参数里之后再测：只读档写文件被拦下，会话记忆还在。所以续接轮一定走 `strict_bin`（`agents.yaml` 里配成 Codex 本体的绝对路径），沙箱、工作目录、可写目录都放在 `exec` 之前。

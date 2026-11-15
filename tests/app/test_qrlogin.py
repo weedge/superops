@@ -90,7 +90,7 @@ def test_扫码登录读回昵称粉丝数_有头像就带上_取消能停掉进
 
 
 def test_退出登录清掉头像和扫码状态(world, q):
-    from superops.biz import paths
+    from superops.infra import paths
     (paths.ops_data() / "browser-profiles" / "douyin" / "Default").mkdir(parents=True)
     (q.state_dir() / "douyin-avatar.png").write_bytes(b"x")
     q.write_status("douyin", "success", "登录成功")

@@ -1,7 +1,7 @@
 """面板“Skill”页：看有哪些 Skill、被哪些规则用、最近跑得怎么样；看和改 SKILL.md，改之前留一份历史版本，可以恢复。
 
 - 来源两处：本仓库的 skills/（可以在面板上改），agents.yaml 的 external_skill_dirs（Popto 产品仓库里的 Skill，只读，
-  去那个仓库改）。同名时仓库的优先，和执行器找 Skill 的顺序一致（biz.config.find_skill）。
+  去那个仓库改）。同名时仓库的优先，和执行器找 Skill 的顺序一致（infra.config.find_skill）。
 - 改 SKILL.md 不用重启：执行器每一轮都现读 Skill 目录。正在跑的那一轮用的是改之前的版本。
 - 只改 SKILL.md。schema.json 决定报告怎么校验、入库程序怎么读，改它要连代码一起改、跑测试，不在面板上改。
 - 历史版本放在数据目录 skill-history/<名字>/<时间>.md（本仓库不在 git 里，这是唯一的回退手段），每个 Skill 留最近 50 份。
@@ -13,7 +13,7 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from ..biz import paths
+from ..infra import paths
 from ..core.errors import UserError
 from ..core.model import latest_report
 

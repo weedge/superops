@@ -9,7 +9,8 @@ from __future__ import annotations
 import csv
 import sys
 
-from .. import db, paths
+from .. import db
+from ...infra import paths
 from ..scriptkit import emit_result
 
 COLS = ["clicks", "registrations", "first_done", "second_done", "paid"]

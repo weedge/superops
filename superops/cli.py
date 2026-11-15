@@ -36,7 +36,6 @@ import argparse
 import json
 import logging
 import os
-import re
 import shutil
 import signal
 import subprocess
@@ -45,26 +44,16 @@ import time
 from datetime import timedelta
 from pathlib import Path
 
-from .biz import config as cfgmod
-from .biz import db, paths
+from .infra import config as cfgmod
+from .biz import db
+from .infra import paths
 from .biz.client import HubClient
-from .biz.timeutil import iso, now
+from .infra.timeutil import iso, now
 
 LOCAL_TEMPLATE = """# 本机配置（不进 git）。agents.yaml 和 policy.yaml 里的同名键会被这里深度覆盖。
 proxy: {proxy}
 
-# ---- 找人的地方和钉钉来源（影子运行先不配：问题和结果落在本机收件箱，superops inbox 查看）
-# home: {{source: dingtalk, thread: home, address: {{chat: "<运营群 openConversationId>"}}}}
-# sources:
-#   dingtalk:
-#     enabled: true
-#     chats: ["<运营群 openConversationId>"]     # dws chat +chat-search --query 运营
-#     observe: mention
-# policy:
-#   sources:
-#     dingtalk:
-#       allowed: [{{id: "<openDingTalkId 或 userId>", name: "审批人"}}]   # 群消息带 openDingTalkId，卡片回调带 userId，两个都填
-#       answerers: {{}}                                                   # 只能批某条规则的人：{{lead-card: ["<ID>"]}}
+{chat}
 notifier:
   bot_name: 兔管家
   dingtalk:
@@ -116,20 +105,109 @@ def short(text: str | None, n: int = 60) -> str:
 
 
 # ---------------------------------------------------------------------- init / doctor / check
+CHAT_LARK = """# ---- 找人的地方：飞书（以我本人身份收发：lark-cli --as user，先 lark-cli auth login）。钉钉和飞书只能开一个
+# 群可以填群 ID（oc_ 开头）或完全一样且唯一的群名；查 ID：lark-cli im +chat-search --query <群名> --as user
+home: {{source: lark, thread: home, address: {{chat: "{group}"}}}}
+sources:
+  lark:
+    enabled: true
+    chats: ["{group}"]
+    observe: mention          # mention 只收 @兔管家 的和回复工单的 | all 群里所有消息
+policy:
+  sources:
+    lark:
+      allowed: {allowed}{allowed_note}
+      answerers: {{}}           # 只能批某条规则的人：{{lead-card: ["ou_..."]}}
+"""
+
+CHAT_DINGTALK = """# ---- 找人的地方：钉钉。钉钉和飞书只能开一个
+home: {{source: dingtalk, thread: home, address: {{chat: "{group}"}}}}
+sources:
+  dingtalk:
+    enabled: true
+    chats: ["{group}"]        # 群的 openConversationId：dws chat +chat-search --query <群名>
+    observe: mention
+policy:
+  sources:
+    dingtalk:
+      allowed: []             # 能提请求、能批所有问题的人：[{{id: "<openDingTalkId>", name: "审批人"}}, {{id: "<userId>", name: "审批人"}}]
+      answerers: {{}}
+"""
+
+CHAT_NONE = """# ---- 找人的地方：还没配聊天软件，问题和结果落在本机收件箱（superops inbox 查看）"""
+
+CHAT_SWITCH_NOTE = """
+# ---- 换成钉钉：把上面一段换成下面这样（钉钉和飞书只能开一个，home 也要跟着改）
+# home: {source: dingtalk, thread: home, address: {chat: "<群 openConversationId>"}}
+# sources:
+#   lark: {enabled: false}
+#   dingtalk: {enabled: true, chats: ["<群 openConversationId>"], observe: mention}
+# policy:
+#   sources:
+#     dingtalk:
+#       allowed: [{id: "<openDingTalkId 或 userId>", name: "审批人"}]   # 群消息带 openDingTalkId，卡片回调带 userId，两个都填
+"""
+
+WRAPPERS = ("~/claude.sh", "~/codex.sh", "~/agy.sh")
+
+
+def wrapper_proxy_default() -> str | None:
+    """包装脚本里写的代理（第一个写了的）：生成 local.yaml 时当全局代理，直调命令的 Agent 也走它。"""
+    from .executor.adapters import wrapper_proxy
+    return next((p for p in (wrapper_proxy(w) for w in WRAPPERS) if p), None)
+
+
+def render_local(chat: str = "lark", group: str | None = None, proxy: str | None = None,
+                 lark_probe=None) -> str:
+    """生成 local.yaml。飞书：lark-cli 登录着就把群名换成群 ID、把本人 open_id 填进审批人；没登录先写群名，启动后由来源去换。"""
+    if chat == "lark":
+        group = group or "测试superops"
+        allowed, note = "[]", "             # 填你的 open_id（lark-cli auth status 的 userOpenId）：[{id: \"ou_...\", name: \"本人\"}]"
+        me = (lark_probe or _probe_lark)(group)
+        if me.get("chat_id"):
+            group = me["chat_id"]
+        if me.get("open_id"):
+            allowed = f'[{{id: "{me["open_id"]}", name: "{me.get("user") or "本人"}"}}]'
+            note = "   # 能提请求、能批所有问题的人：飞书 open_id（不认昵称）"
+        block = CHAT_LARK.format(group=group, allowed=allowed, allowed_note=note) + CHAT_SWITCH_NOTE
+    elif chat == "dingtalk":
+        block = CHAT_DINGTALK.format(group=group or "<群 openConversationId>")
+    else:
+        block = CHAT_NONE + "\n" + CHAT_SWITCH_NOTE
+    return LOCAL_TEMPLATE.format(proxy=f'"{proxy}"' if proxy else "null", chat=block.rstrip("\n"))
+
+
+def _probe_lark(group: str) -> dict:
+    """lark-cli 登录着的话：本人 open_id、群名对应的群 ID。没装、没登录、查不到都返回空的。"""
+    if not shutil.which("lark-cli"):
+        return {}
+    from .infra.notifier import lark
+    status = lark.auth_status()
+    if not status.get("ok"):
+        return {}
+    out = {"open_id": status.get("open_id"), "user": status.get("user")}
+    if not group.startswith("oc_"):
+        try:
+            out["chat_id"] = lark.find_chat(group)
+        except lark.LarkError:
+            pass
+    return out
+
+
 def cmd_init(a) -> None:
     root = paths.ensure_data_dirs()
     db.open_ops().close()
     from .app.store import Store
     Store(root / "superops.sqlite").close()
     local = root / "local.yaml"
+    if getattr(a, "chat", "lark") == "dingtalk" and not getattr(a, "group", None):
+        sys.exit("--chat dingtalk 要同时给 --group <群 openConversationId>（dws chat +chat-search --query <群名>）")
+    if local.exists() and getattr(a, "reset_local", False):
+        backup = local.with_name(f"local.yaml.bak-{time.strftime('%Y%m%d-%H%M%S')}")
+        local.rename(backup)
+        print(f"原来的 local.yaml 备份到 {backup}")
     if not local.exists():
-        proxy = "null"
-        sh = Path("~/claude.sh").expanduser()
-        if sh.exists():
-            m = re.search(r'PROXY="(http://[^"]+)"', sh.read_text())
-            if m:
-                proxy = f'"{m.group(1)}"'
-        local.write_text(LOCAL_TEMPLATE.format(proxy=proxy), encoding="utf-8")
+        local.write_text(render_local(getattr(a, "chat", "lark"), getattr(a, "group", None), wrapper_proxy_default()), encoding="utf-8")
         local.chmod(0o600)
     print(f"数据目录：{root}\n本机配置：{local}\n下一步：superops doctor；接单模式默认是 observe（只记录“本来会接单”），看一阵没问题再 `superops mode auto`。")
 
@@ -139,8 +217,16 @@ def check() -> tuple[list[str], list[str]]:
     import yaml
 
     from .app.settings import deep_merge, normalize
+    from .biz.context import CONTEXT_PROVIDERS
+    from .infra.instance import current as current_instance
     errors, warnings = [], []
     home = paths.ops_home()
+    try:   # 数据目录（也就是 local.yaml 在哪）由 instance 决定，要先过这一关
+        inst = current_instance(home)
+    except (ValueError, yaml.YAMLError) as error:
+        return [f"agents.yaml 的 instance 写错了：{error}"], []
+    if not inst.name:
+        warnings.append(f"agents.yaml 没写 instance.name：数据目录用 {inst.data_dir}，钥匙串服务名用 {inst.keychain_service}/<密钥名>")
     try:
         cfg = cfgmod.load_agents_config(home)
     except Exception as error:  # noqa: BLE001
@@ -183,7 +269,7 @@ def check() -> tuple[list[str], list[str]]:
             if run.get("skill") and not cfgmod.find_skill(run["skill"], cfg, home):
                 (errors if rule["enabled"] else warnings).append(f"规则 {rule['id']}：找不到 Skill {run['skill']}")
             for provider in run.get("context") or []:
-                if provider not in cfgmod.CONTEXT_PROVIDERS:
+                if provider not in CONTEXT_PROVIDERS:
                     errors.append(f"规则 {rule['id']}：不认识的上下文 {provider}")
         if rule["enabled"] and rule["tell"] == "always" and run["executor"] != "none":
             always += 1
@@ -222,24 +308,29 @@ def cmd_check(a) -> None:
 def cmd_doctor(a) -> None:
     cfg = cfgmod.load_agents_config()
     rows = []
+    from .executor.adapters import COMMANDS, adapter_for, direct_bin, uses_wrapper, wrapper_proxy
+    search = ":".join(os.path.expanduser(p) for p in str(cfg.get("path", "")).split(":") if p)
     for name, ac in (cfg.get("agents") or {}).items():
-        b = ac.get("bin")
-        ok = (Path(os.path.expanduser(b)).exists() if b else ac.get("type") in ("inbox", "script"))
-        note = b or ac.get("type")
-        if b and b.endswith(".sh"):
-            from .executor.adapters import wrapper_proxy
-            note += f"（代理 {ac.get('proxy') or wrapper_proxy(b) or '脚本内未写'}）"
+        if ac.get("type") not in COMMANDS:          # 收发件箱、脚本、通用命令：不用装命令行
+            rows.append((f"Agent {name}", True, ac.get("type")))
+            continue
+        b, cmd = ac.get("bin"), direct_bin(ac, search)   # 装没装看命令本体，和池子的判断一致
+        ok = adapter_for(ac).available(ac, search)
+        wanted = ac.get("command") or COMMANDS[ac["type"]]
+        note = cmd or f"找不到命令 {wanted if isinstance(wanted, str) else ' / '.join(wanted)}"
+        if b and uses_wrapper(ac):
+            note += f"；经包装脚本 {b}（代理 {ac.get('proxy') or wrapper_proxy(b) or '脚本内未写'}）"
+        elif b:
+            note += f"；包装脚本 {b} 不在，直接调用命令（代理 {ac.get('proxy') or cfg.get('proxy') or '未配置'}）"
         if ac.get("strict_tiers"):
-            sb = ac.get("strict_bin")
-            ok = ok and bool(sb) and Path(os.path.expanduser(sb)).exists()
-            note += f"；{'/'.join(ac['strict_tiers'])} 档位直调 {sb}"
+            note += f"；{'/'.join(ac['strict_tiers'])} 档位直调命令本体"
         rows.append((f"Agent {name}", ok, note))
-    for tool in ("dws", "ffmpeg", "whisper-cli", "uv"):
+    rows += chat_rows()
+    for tool in ("ffmpeg", "whisper-cli", "uv"):
         rows.append((tool, bool(shutil.which(tool)), shutil.which(tool) or "未找到"))
-    from .biz.scriptkit import keychain
+    from .infra.secrets import add_command, keychain, service_for
     for k in ("tikhub", "redfox", "gitlab"):
-        rows.append((f"钥匙串 popto-ops/{k}", bool(keychain(k)), "已配置" if keychain(k) else
-                     f"security add-generic-password -s popto-ops/{k} -a popto-ops -w"))
+        rows.append((f"钥匙串 {service_for(k)}", bool(keychain(k)), "已配置" if keychain(k) else add_command(k)))
     from .biz import agent_browser as ab
     abs_ = ab.settings(cfg)
     if abs_["enabled"]:
@@ -260,7 +351,42 @@ def cmd_doctor(a) -> None:
         for problem in overview["problems"]:
             rows.append((f"问题 {problem['title']}", False, problem["detail"]))
     for name, ok, info in rows:
-        print(f"{'✓' if ok else '✗'} {name:<24} {info}")
+        print(f"{'✓' if ok else '✗'} {pad(name, 26)} {info}")
+
+
+def pad(text: str, width: int) -> str:
+    """按显示宽度补空格（中文占两格），让中英文混排的列对齐。"""
+    import unicodedata
+    used = sum(2 if unicodedata.east_asian_width(ch) in "WF" else 1 for ch in text)
+    return text + " " * max(1, width - used)
+
+
+class _NoOverrides:
+    def get(self, key, default=None):
+        return default
+
+
+def effective_settings() -> dict:
+    """宿主实际用的设置：policy.yaml 叠 local.yaml，再叠面板在库里改的（聊天渠道、模式、暂停）。不用宿主在跑。"""
+    from .app.settings import Settings
+    from .app.store import Store
+    db_path = paths.ops_data() / "superops.sqlite"
+    store = Store(db_path) if db_path.exists() else None
+    try:
+        return Settings(store or _NoOverrides(), None).current()
+    finally:
+        if store:
+            store.close()
+
+
+def chat_rows() -> list[tuple[str, bool, str]]:
+    """doctor 的聊天软件几行：钉钉 / 飞书命令行、登录、群、home、审批人。"""
+    from .app import chatcheck
+    try:
+        settings = effective_settings()
+    except Exception as error:  # noqa: BLE001  配置写错：check 那一行会报详情
+        return [("聊天渠道", False, f"配置读不了：{str(error)[:160]}")]
+    return [(r["title"], r["ok"], r["detail"] + (f" → {r['fix']}" if r.get("fix") else "")) for r in chatcheck.check(settings)]
 
 
 # ---------------------------------------------------------------------- run
@@ -553,18 +679,21 @@ def cmd_browse(a) -> None:
     sys.exit(ab.login(cfg, urls))
 
 
-LAUNCHD = {"cn.popto.superops": ["superops", "run"]}
+def launchd_jobs() -> dict[str, list[str]]:
+    """launchd 标签 → 命令。标签来自 agents.yaml 的 instance.launchd_label。"""
+    from .infra.instance import current
+    return {current().launchd_label: ["superops", "run"]}
 
 
 def cmd_launchd(a) -> None:
-    tpl = (paths.ops_home() / "launchd" / "template.plist").read_text(encoding="utf-8")
+    tpl = (paths.code_root() / "launchd" / "template.plist").read_text(encoding="utf-8")   # 模板和 --project 跟代码走，配置目录跟 SUPEROPS_HOME 走
     uv = shutil.which("uv") or str(Path("~/.local/bin/uv").expanduser())
     data = paths.ensure_data_dirs()
     agents_dir = Path("~/Library/LaunchAgents").expanduser()
     cfg = cfgmod.load_agents_config()
     path_env = ":".join(os.path.expanduser(p) for p in str(cfg.get("path", "")).split(":") if p)
-    for label, argv in LAUNCHD.items():
-        args = [uv, "run", "--project", str(paths.ops_home()), *argv]
+    for label, argv in launchd_jobs().items():
+        args = [uv, "run", "--project", str(paths.code_root()), *argv]
         xml = (tpl.replace("{{LABEL}}", label)
                   .replace("{{ARGS}}", "\n".join(f"    <string>{x}</string>" for x in args))
                   .replace("{{PATH}}", path_env).replace("{{OPS_DATA}}", str(data))
@@ -606,7 +735,11 @@ def main(argv: list[str] | None = None) -> None:
     get = lambda path: out(call("GET", path))  # noqa: E731
     text = lambda a: " ".join(a.text)  # noqa: E731
     who = os.environ.get("USER", "operator")
-    sp.add_parser("init").set_defaults(fn=cmd_init)
+    s = sp.add_parser("init", help="建数据目录和库；没有 local.yaml 时生成一份")
+    s.add_argument("--chat", choices=["lark", "dingtalk", "none"], default="lark", help="找人用哪个聊天软件（默认飞书）")
+    s.add_argument("--group", help="群名或群 ID（飞书默认「测试superops」）")
+    s.add_argument("--reset-local", action="store_true", help="已有 local.yaml 时先备份成 local.yaml.bak-<时间> 再重新生成")
+    s.set_defaults(fn=cmd_init)
     sp.add_parser("doctor").set_defaults(fn=cmd_doctor)
     sp.add_parser("check").set_defaults(fn=cmd_check)
     s = sp.add_parser("run")

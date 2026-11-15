@@ -8,7 +8,7 @@ import json
 import sys
 import uuid
 
-from ..biz import paths
+from ..infra import paths
 from ..core.model import now_iso
 from ..core.reasons import key
 from .kind import SourceKind

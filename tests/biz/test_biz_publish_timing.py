@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from superops.biz.executors import publishers as pubs
-from superops.biz.timeutil import parse_iso
+from superops.infra.timeutil import parse_iso
 
 AT = parse_iso("2026-11-11T17:20:00+08:00")
 

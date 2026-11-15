@@ -1500,7 +1500,7 @@ VIEWS.overview = ({ ov, open, log, asks, pick, tk }) => {
       <div class="agent-d">${esc(a.duty || '待命')}</div>${tuneHtml}
       ${foot ? `<div class="agent-r">${foot}</div>` : ''}</div>`;
   };
-  const credit = ov.counters && ov.counters.budget ? ` · 今日积分 ${num(ov.counters.popto_credits || 0)}/${num(ov.counters.budget)}` : '';
+  const credit = ov.counters && ov.counters.budget ? ` · 今日${esc(ov.counters.label || '积分')} ${num(ov.counters.used || 0)}/${num(ov.counters.budget)}` : '';
   const org = `<section class="org" aria-label="运转图">
     <div class="org-node you"><span class="ava">我</span><div><b>你</b><small>拍板 · 定方向 · 回答 Agent 的问题</small></div>
       ${person.length ? `<a class="pill hot" href="${H('tickets', { f: 'person' })}">等你 ${person.length} 件</a>` : '<span class="pill calm">没有待办</span>'}</div>

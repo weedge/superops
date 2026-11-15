@@ -10,8 +10,9 @@ import logging
 
 import yaml
 
-from . import db, paths
-from .timeutil import iso
+from . import db
+from ..infra import paths
+from ..infra.timeutil import iso
 
 log = logging.getLogger("ingest")
 
@@ -95,7 +96,7 @@ def comment_triage(ops, out: dict, lease: dict) -> None:
 def score_demand(ops, did: str, scoring: dict | None = None, value_hint: str | None = None) -> float:
     """按信号汇总初始分与人群分布：需求分 = Σ(意图强度 × 人群权重) × 价值系数 ÷ 成本。"""
     if scoring is None:
-        from .config import load_agents_config
+        from ..infra.config import load_agents_config
 
         scoring = load_agents_config().get("demand_scoring") or {}
     pw = scoring.get("persona_weights") or {}

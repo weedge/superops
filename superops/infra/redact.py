@@ -67,7 +67,7 @@ def _known_secrets() -> tuple[str, ...]:
     t = time.monotonic()
     if _secrets_cache and t - _secrets_cache[0] < _SECRETS_TTL:
         return _secrets_cache[1]
-    from .scriptkit import keychain
+    from .secrets import keychain
 
     vals = []
     for name in KEYCHAIN_NAMES:

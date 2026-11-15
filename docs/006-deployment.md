@@ -13,10 +13,11 @@
 ## 前置条件
 
 - macOS（常驻用 launchd，密钥用钥匙串）、Python 3.11 以上、`uv`、git。
-- Agent 命令行：`~/claude.sh`、`~/codex.sh`、`~/agy.sh` 三个包装脚本（和终端别名一致，代理各自在脚本里设），以及 `~/.local/bin/claude`、`~/.local/bin/agy`（只读档位绕开包装脚本直调）。路径在 `agents.yaml` 的 `agents`。**2026-11-12 起 Antigravity（agy）不可用**：已从全部降级链摘掉，原来指定它的 4 条规则（视频质检、社媒监听浏览器补位、GEO 检查、行业爆款拆解）改成 Codex；视频类由宿主先抽帧和转写再交给 Codex；行业爆款拆解要调 Popto 接口，规则上加了 `run.network: true`（Codex 的 workspace 档默认断网）。agy 恢复后把它加回 `fallback_chains` 和这几条规则即可。
-- 按用到的功能：`dws`（钉钉）、`ffmpeg` 和 `whisper-cli`（视频质检降级时抽帧转写）、本机 Chrome（自动发布、读创作者后台、专用浏览器）、Node.js（专用浏览器的 playwright-cli）。
+- Agent 命令行：`claude`、`codex`、`agy`（或 `antigravity`）命令本身。**装没装看命令，不看包装脚本**：宿主依次在 `agents.yaml` 的 `path`、自己的 PATH、`~/.local/bin`、`/opt/homebrew/bin`、`/usr/local/bin`、`~/.npm-global/bin`、`~/.bun/bin`、`~/.antigravity/antigravity/bin`、`~/.nvm/versions/node/*/bin`（新版本在前）里找，找到的目录加到 Agent 进程 PATH 的最前面（nvm 装的命令要靠同目录的 `node`）。命令名不一样时在 `agents.<名>.command` 写命令名或绝对路径；断掉的软链接（比如应用删了留下的 `agy`）算没装。`~/claude.sh`、`~/codex.sh`、`~/agy.sh` 这类包装脚本可有可无：在就照旧经它启动（代理和权限参数在脚本里设），不在就直接调命令，代理用 `local.yaml` 的 `proxy`（`superops init` 生成时从 `~/claude.sh`、`~/codex.sh`、`~/agy.sh` 里第一个写了 `PROXY=` 的取；都没有就是 `null`，网络要代理时自己填上）；只读档和 Codex 续接直调命令本体（`strict_bin` 在就用它，否则用找到的命令）。路径在 `agents.yaml` 的 `agents`。**2026-11-12 起 Antigravity（agy）不可用**：已从全部降级链摘掉，原来指定它的 4 条规则（视频质检、社媒监听浏览器补位、GEO 检查、行业爆款拆解）改成 Codex；视频类由宿主先抽帧和转写再交给 Codex；行业爆款拆解要调 Popto 接口，规则上加了 `run.network: true`（Codex 的 workspace 档默认断网）。agy 恢复后把它加回 `fallback_chains` 和这几条规则即可。
+- 聊天软件的命令行，用哪个装哪个：`lark-cli`（飞书，`npm install -g @larksuite/cli`，再 `lark-cli config init --new`、`lark-cli auth login --domain im`）或 `dws`（钉钉，`dws auth login --recommend`）。
+- 按用到的功能：`ffmpeg` 和 `whisper-cli`（视频质检降级时抽帧转写）、本机 Chrome（自动发布、读创作者后台、专用浏览器）、Node.js（专用浏览器的 playwright-cli）。
 
-`superops doctor` 逐项检查这些，并报告策略校验结果、宿主是否在跑、各来源的状态。
+`superops doctor` 逐项检查这些，并报告策略校验结果、宿主是否在跑、各来源的状态。聊天软件单独列几行（读的是宿主实际用的设置，含面板在库里改过的）：用的是钉钉还是飞书；`dws`、`lark-cli` 装没装（没开的那个只说一声，不算问题）；开着的那个本人身份登录没有、群配了没有（飞书写的群名能不能换成群 ID）、home 是否指向它、审批人名单是否为空或写了不是 open_id 的值，没通过的每行后面写着怎么补。
 
 ## 要提前登录的和要提前放好的密钥
 
@@ -29,7 +30,7 @@
 | TikHub 密钥 | 社媒监听（接口：搜作品、按人群词找人、补粉丝数）；评论采集；抖音指标读不到后台时的兜底 | `security add-generic-password -s popto-ops/tikhub -a popto-ops -w <key>` | 钥匙串 |
 | 飞书本人登录（要用飞书才配） | 飞书来源：轮询运营群、发卡片和结果、单聊 / @我 的自动回复 | `lark-cli auth login`（7 天续一次） | lark-cli 自己保存 |
 | GitLab 令牌（机器人账号，api 权限） | 接入了仓库（`ci.projects` 非空）时的 CI 轮询、MR 审查与写回、合并闸门、合并、开发工单的推送和开 MR | `security add-generic-password -s popto-ops/gitlab -a popto-ops -w <token>` | 钥匙串 |
-| Agent 命令行已登录（Claude / Codex / Antigravity） | 所有 Agent 执行的规则 | 各自的命令行登录一次；`superops doctor` 看包装脚本在不在 | 各 CLI 自己的目录 |
+| Agent 命令行已登录（Claude / Codex / Antigravity） | 所有 Agent 执行的规则 | 各自的命令行登录一次；`superops doctor` 看找到的命令在哪、经不经包装脚本 | 各 CLI 自己的目录 |
 | `dws` 已登录 | 钉钉来源（收群消息、发卡片） | `dws auth login` | dws 自己的配置 |
 
 登录态和密钥都**不跟着数据目录以外的东西走**：新建数据目录（包括从旧 ops 切过来）后，三个创作者后台和专用浏览器都要重新登录一次；钥匙串的服务名沿用 `popto-ops/<名>`，旧 ops 配过的不用重配。扫码登录只能由人来做，Agent 不会去登录任何站点。
@@ -50,7 +51,7 @@ superops preflight --refresh  # 重新查一遍（补完之后用它复查）
 ```bash
 cd dsh-superagent-ops
 uv sync                    # 需要代理时先 export https_proxy=… http_proxy=…
-uv run superops init       # 建数据目录、superops.sqlite、ops.db，生成 local.yaml（从 ~/claude.sh 里读出代理）
+uv run superops init       # 建数据目录、superops.sqlite、ops.db，生成 local.yaml（默认飞书群「测试superops」，代理取包装脚本里写的）
 uv run superops doctor
 uv run pytest -q
 ```
@@ -60,11 +61,22 @@ uv run pytest -q
 | 文件 | 管什么 | 怎么生效 |
 | --- | --- | --- |
 | `policy.yaml` | 策略：接单模式的初始值、研判时限、执行位和闲置期限、明确请求的默认执行方式、home 渠道、各来源的开关和收听范围、各来源的名单 / 可回答人 / 准入表、规则 | 走 MR；`superops check` 校验，`superops reload` 生效 |
-| `agents.yaml` | 机器层面：管理 API 的地址和令牌、代理、Agent 的启动方式 / 并发 / 续接、降级链、熔断、忙时顺延的等待（`overflow_after`）、用量策略、预算、数据保留期、静默时段、每日卡片上限、问题默认到期、钉钉发消息的身份、专用浏览器、自动发布模式、需求打分 | 重启宿主 |
+| `agents.yaml` | 这套部署叫什么（`instance`，见下）；机器层面：管理 API 的地址和令牌、代理、Agent 的启动方式 / 并发 / 续接、降级链、熔断、忙时顺延的等待（`overflow_after`）、用量策略、预算、数据保留期、静默时段、每日卡片上限、问题默认到期、钉钉发消息的身份、专用浏览器、自动发布模式、需求打分 | 重启宿主 |
 | `schedules.yaml` | 定时表：每项的类型、`name`（面板上的中文名）、`at` 或 `every`、`max_late`、`requires` | `superops reload` |
 | `~/popto-superops-data/local.yaml` | 本机的值：代理、钉钉群 ID、审批人 ID、GitLab 项目和本机仓库路径。同名键深度覆盖上面两个文件：全部键覆盖 `agents.yaml`；`eval`、`executor`、`sources`、`policy`、`home` 五个键覆盖 `policy.yaml` | 覆盖 `policy.yaml` 的部分随 `superops reload` 生效；其余重启。钉钉来源的开关和群列表要重启 |
 | `skills/<名字>/SKILL.md` | 各条规则交给 Agent 的工作说明。面板 → Skill 页能看全部 Skill（被哪些规则用、近 30 天工单数和失败数），仓库里的能直接在面板上改，保存前自动存一份旧版本到 `~/popto-superops-data/skill-history/<名字>/`，能在“历史版本”里对比、恢复；`external_skill_dirs` 里的（Popto 产品仓库的）只读。`schema.json` 连着入库代码，不在面板上改 | 下一轮工单生效，不用重启 |
 | 库里的运行时开关 | 接单模式、暂停处理、单独暂停的规则 / Agent / 事件来源 | `superops mode`、`superops pause`、`superops resume`，立即生效，重启后保留 |
+
+`agents.yaml` 开头的 `instance` 定下这套部署的名字，下面这些都由它推出，不再写死在代码里：
+
+| 推出来的 | 规则 | `name: popto` 时 | 单独覆盖 |
+| --- | --- | --- | --- |
+| 数据目录 | `~/<name>-superops-data` | `~/popto-superops-data` | `instance.data_dir`；环境变量 `SUPEROPS_DATA` 优先于它 |
+| 钥匙串服务名 | `<name>-ops/<密钥名>`，账号名 `<name>-ops` | `popto-ops/tikhub`、`popto-ops/gitlab` | `instance.keychain_service` |
+| launchd 标签 | `cn.<name>.superops` | `cn.popto.superops` | `instance.launchd_label` |
+| 积分计数器和预算键 | 报告的 `credits_used` 记到 `instance.credits.counter`，单日上限是 `budgets.<counter>` | `popto_credits`、`budgets.popto_credits` | `instance.credits.label` 是提示和面板上的叫法（`Popto 积分`） |
+
+`instance` 只认仓库里的 `agents.yaml`，写在 `local.yaml` 里不生效（`local.yaml` 就在数据目录里，数据目录要先由它定）。改 `name` 等于换一个数据目录和一组钥匙串条目：原来的库、登录态、密钥都不会跟过去，要么改回来，要么用 `data_dir` / `keychain_service` 指回原处。`superops check` 会先校验这一节，写错了直接报出是哪一项。
 
 几点容易踩的：
 
@@ -92,7 +104,7 @@ uv run pytest -q
 sources:
   lark:
     enabled: true
-    chats: ["oc_xxx"]            # 运营飞书群的 chat_id：lark-cli im +chat-search --query <群名> --as user
+    chats: ["测试superops"]      # 群 ID（oc_ 开头）或完全一样且唯一的群名；查 ID：lark-cli im +chat-search --query <群名> --as user
     poll_seconds: 15
     auto_reply_poll_seconds: 30
 policy:
@@ -100,6 +112,10 @@ policy:
     lark:
       allowed: [{id: "ou_xxx", name: "审批人"}]   # 能提请求、能批所有问题的人：飞书 open_id（不认昵称）
 ```
+
+`chats`、`rule_chats` 和 `home.address.chat` 都可以写群名：飞书来源第一次用到时用 `im +chat-search` 换成群 ID（只认完全一样且唯一的群名），记下来，面板上按群名显示；换不出来的（没登录、重名、改了名）先跳过，在来源状态里报出原因，每分钟重试一次。写群 ID 不依赖群名，群改名也不受影响。
+
+**生成配置**：`superops init` 生成的 `local.yaml` 默认就是飞书：`home` 和 `chats` 指向群「测试superops」，钉钉的写法留在注释里。lark-cli 登录着时，群名直接换成群 ID，你的 open_id 也填进 `allowed`；没登录就先写群名、`allowed` 留空（`superops check` 会提醒没人能在群里提请求），登录后用 `lark-cli auth status` 的 `userOpenId` 补上。其他写法：`superops init --group <群名或群 ID>` 换群，`--chat dingtalk --group <openConversationId>` 用钉钉，`--chat none` 不配聊天软件（落本机收件箱）。已有 `local.yaml` 时不覆盖；`--reset-local` 先备份成 `local.yaml.bak-<时间>` 再重新生成。
 
 **2026-11-12 切换记录**：钉钉关掉，飞书打开，群是「测试superops」（`oc_xxx`），`home` 也指向它；切换前的配置备份在 `local.yaml.bak-before-lark-20261112`。实测：`lark-cli im +chat-messages-list` 的时间只到分钟、是本地时间，系统消息（建群提示等）跳过；群里 `@兔管家` 的请求半分钟内开出工单并把确认和结果发回群里。
 

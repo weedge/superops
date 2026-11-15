@@ -17,7 +17,7 @@ import yaml
 import superops.biz
 from superops.biz import db, scriptkit
 from superops.biz.client import HubClient
-from superops.biz.timeutil import iso
+from superops.infra.timeutil import iso
 from superops.biz.notifier.listener import handle_event
 
 from bizhelpers import FakeHost
@@ -35,7 +35,7 @@ def test_every_biz_module_imports():
 
 
 def test_old_architecture_is_gone():
-    from superops.biz import config
+    from superops.infra import config
 
     assert not hasattr(db, "open_hub") and not hasattr(db, "HUB_DDL") and not hasattr(db, "hub_db_path")
     assert not any(hasattr(config, n) for n in ("load_rules", "rule_chain", "check_config", "RULE_KEYS"))
@@ -104,8 +104,13 @@ def test_scriptkit_load_task_and_emit_result(home, data_dir, monkeypatch, capsys
     assert last == out and len(last["summary"]) == 600 and last["extra_field"] == [1]
     assert (last["status"], last["needs_decision"], last["message_markdown"]) == ("needs_decision", True, "正文")
     assert last["follow_up_events"] == [{"type": "a.b"}] and last["dogfood_friction"] == []
+
+
+def test_keychain_reads_test_override_from_env(monkeypatch):
+    from superops.infra.secrets import keychain
+
     monkeypatch.setenv("OPS_SECRET_TIKHUB", "from-env")
-    assert scriptkit.keychain("tikhub") == "from-env"
+    assert keychain("tikhub") == "from-env"
 
 
 def test_listener_bridge_reaches_host_over_http(host):

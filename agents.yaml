@@ -2,6 +2,13 @@
 # “谁可以让 Agent 开工、Agent 可以主动做什么”不在这里，在 policy.yaml。
 # 机器相关、含内网地址或账号 ID 的配置写在 ~/popto-superops-data/local.yaml（不进 git），按同名键深度覆盖本文件。
 
+# 这套部署叫什么（superops/infra/instance.py）：数据目录、钥匙串服务名、launchd 标签都按 name 推导，
+# 推出来是 ~/popto-superops-data、popto-ops/<密钥名>、cn.popto.superops；要不一样就在这里单独写 data_dir / keychain_service / launchd_label。
+# 只在本文件里认，不认 local.yaml（local.yaml 就放在数据目录里）。环境变量 SUPEROPS_DATA 仍然优先于 data_dir。
+instance:
+  name: popto
+  credits: {counter: popto_credits, label: Popto 积分}   # 报告 credits_used 记到这个计数器；单日上限是 budgets.<counter>
+
 # 管理 API 和面板的监听地址；确定性脚本也通过它回调宿主（脚本契约沿用 ops 的 /v1/*，所以键名仍叫 hub）。
 # 端口和旧的 ops 中台（8787）错开，两套可以同时跑。
 hub:

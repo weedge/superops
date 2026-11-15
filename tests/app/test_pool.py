@@ -16,7 +16,7 @@ import pytest
 from superops.app.effects import Later
 from superops.app.health import HealthBoard
 from superops.app.store import Store
-from superops.biz import timeutil
+from superops.infra import timeutil
 from superops.executor import adapters
 from superops.executor.pool import AgentPool
 

@@ -192,7 +192,7 @@ def publish(pack: dict, meta: dict, *, dry_run: bool, shots: Path, headless: boo
                 except Exception:  # noqa: BLE001
                     pass
         page.on("response", on_resp)
-        from ...timeutil import now as _now
+        from ....infra.timeutil import now as _now
         from datetime import timedelta as _td
         clicked = _now() - _td(minutes=10)            # 本机和平台时钟可能差几分钟
         page.get_by_role("button", name="发布", exact=True).click()

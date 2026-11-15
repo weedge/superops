@@ -293,7 +293,7 @@ def test_social_accounts_provider_lists_every_platform_without_login_state(home,
 def test_publish_queue_tells_image_posts_from_videos_and_what_is_already_in_flow(home, data_dir):
     """今日发布推荐用：今天有什么在发布流程里、哪些写好稿的是图文（能自动出图）。"""
     from superops.biz import db
-    from superops.biz.timeutil import iso
+    from superops.infra.timeutil import iso
     ops = db.open_ops()
     for cid, fmt in (("c_20261113_01", "小红书图文，8 页"), ("c_20261113_02", "口播视频 60 秒"), ("c_20261111_01", "小红书图文")):
         f = data_dir / "work" / "t1" / "scripts" / cid / "xiaohongshu.md"

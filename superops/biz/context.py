@@ -18,8 +18,10 @@ from datetime import timedelta
 from pathlib import Path
 from urllib.parse import parse_qsl, unquote, urlparse
 
-from . import db, governance, paths
-from .timeutil import iso, now
+from . import db
+from ..infra import governance, paths
+from ..infra.instance import current as current_instance
+from ..infra.timeutil import iso, now
 
 # 能力 → 提示词里的角色名（executor 拼提示词时用）
 ROLE = {
@@ -86,6 +88,12 @@ def _ops_metrics(ops: sqlite3.Connection) -> dict:
                                  ((now() - timedelta(days=14)).date().isoformat(),)))
     return {"window_days": 14, "posts": posts, "funnel_daily": funnel}
 
+
+# ContextBuilder 认得的上下文提供者（规则 run.context 里能写的名字），和下面的 p_<名> 方法一一对应
+CONTEXT_PROVIDERS = {
+    "hub_digest", "hub_digest_week", "ops_metrics", "unread_feedback", "demands", "event_payload",
+    "event_media", "listening_terms", "budget_popto_credits", "mr_diff", "event_scripts", "popto_help", "content_calendar", "social_accounts", "popto_help_images", "publish_queue",
+}
 
 class ContextBuilder:
     def __init__(self, client, run_dir: Path, ops_db: Path | None = None):
@@ -159,7 +167,7 @@ class ContextBuilder:
 
     def p_popto_help_images(self, lease, events):
         """Popto 帮助文档的界面截图（docs/popto-help/images）：图文出图时当配图素材用（积分余额、账号头像有的没打码，出图时要裁掉或盖住）。"""
-        from .config import load_agents_config
+        from ..infra.config import load_agents_config
 
         src = popto_help_dir(load_agents_config())
         imgs = sorted(f for f in (src / "images").iterdir() if f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")) \
@@ -202,7 +210,7 @@ class ContextBuilder:
     def p_social_accounts(self, lease, events):
         """superops 发布台管着的各平台社媒账号（创作者后台的登录）：登没登、是哪个号、能不能自动发布。
         明确请求的工单默认带上，人问“现在绑了哪些号 / 哪个号掉线了”时直接答。只给状态，不给登录态本身。"""
-        from .config import load_agents_config
+        from ..infra.config import load_agents_config
         from .executors.publishers import ACCOUNTS, account_keys, default_account, profiles_root, read_registry
         from .executors.publishers.qrlogin import read_status
         known = read_registry()
@@ -239,14 +247,14 @@ class ContextBuilder:
         self._write("listening_terms.json", rows, "监听意图词及近 7 天命中数")
 
     def p_budget_popto_credits(self, lease, events):
-        used = self.client.get("/v1/counter", name="popto_credits").get("value", 0)
+        used = self.client.get("/v1/counter", name=current_instance().credits_counter).get("value", 0)
         self._write("budget.json", {"popto_credits_used_today": used, "rule_credits_per_run": (lease.get("rule") or {}).get("credits_per_run")},
                     "今日 Popto 积分用量")
 
     def p_mr_diff(self, lease, events):
         """MR 审查：宿主用 Token 取 MR 信息和 diff，审查者只读、不联网也能看到改动。"""
         from .ci.gitlab import GitLab
-        from .config import load_agents_config
+        from ..infra.config import load_agents_config
 
         c = load_agents_config().get("ci") or {}
         gl = GitLab(c.get("gitlab_url", "https://gitlab.example.com"))
@@ -330,7 +338,7 @@ class ContextBuilder:
 
     def p_popto_help(self, lease, events):
         """Popto 帮助文档（功能入口、步骤、积分、限制）：写脚本、复核、排选题时核对产品事实。只复制文字，不带截图。"""
-        from .config import load_agents_config
+        from ..infra.config import load_agents_config
 
         src = popto_help_dir(load_agents_config())
         docs = sorted(src.glob("*.md")) if src and src.is_dir() else []
@@ -515,7 +523,7 @@ def load_skill_text(skill_dir: Path) -> str:
 
     text = INLINE_RE.sub(sub, text)
     if "{{brand_accounts}}" in text:    # 品牌自己的号写在 local.yaml 的 brand_accounts，不进仓库
-        from .config import load_agents_config
+        from ..infra.config import load_agents_config
         names = [str(x) for x in (load_agents_config().get("brand_accounts") or []) if str(x).strip()]
         text = text.replace("{{brand_accounts}}", "、".join(names) or "local.yaml 的 brand_accounts 里登记的账号（现在没登记）")
     return text

@@ -13,8 +13,9 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from ..biz import paths
-from ..biz.timeutil import TZ
+from ..infra import paths
+from ..infra.instance import current as current_instance
+from ..infra.timeutil import TZ
 from ..core.errors import UserError
 from ..core.model import live_ticket
 from . import prompts
@@ -111,9 +112,10 @@ class Assessor:
         if rule.get("max_rounds") and len(same) >= int(rule["max_rounds"]):
             return {"kind": "ignore", "reason": {"code": "maxRounds", "values": {**named, "rounds": str(rule["max_rounds"])}}, "audit": audit}
         if rule.get("credits_per_run"):
-            budget = float((rt.cfg.get("budgets") or {}).get("popto_credits", 0) or 0)
-            if budget and rt.counter("popto_credits") + float(rule["credits_per_run"]) > budget:
-                return {"kind": "ignore", "reason": {"code": "overBudget", "values": {**named, "budget": "Popto 积分"}}, "audit": audit}
+            inst = current_instance()
+            budget = float((rt.cfg.get("budgets") or {}).get(inst.credits_counter, 0) or 0)
+            if budget and rt.counter(inst.credits_counter) + float(rule["credits_per_run"]) > budget:
+                return {"kind": "ignore", "reason": {"code": "overBudget", "values": {**named, "budget": inst.credits_label}}, "audit": audit}
         title = rule["name"] if not subject or subject == type_ else f"{rule['name']} · {subject}"
         if settings["eval"]["mode"] != "auto" and not approved:  # 人批准的动作不受接单模式限制
             return {"kind": "ignore", "reason": {"code": "observed", "values": {"text": rule["name"]}},
